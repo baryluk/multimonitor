@@ -75,7 +75,7 @@ int main(string[] args) {
   auto helpInformation = getopt(
     args,
     std.getopt.config.caseSensitive,
-    "interval_msec",      "Target interval for main metric sampling and output. (default: 200ms.)",   &interval_msec,
+    "interval_msec",      "Target interval for main metric sampling and output. (default: 200ms)",   &interval_msec,
     "process",            "List of process names to monitor", &process_names,
     "pids",               "List of process pids to monitor", &pids,
     "process_map",        "Assign short names to processes, i.e. a=firefox,b=123", &process_map,
@@ -109,7 +109,7 @@ int main(string[] args) {
 
   const interval = dur!"msecs"(interval_msec);
 
-  auto amdgpu_hwmon_dir = searchHWMON("amdgpu");
+  auto amdgpu_hwmon_dir = gpu_stuff != GpuStuff.none ? searchHWMON("amdgpu") : null;
   auto gpu_stat_reader = amdgpu_hwmon_dir !is null ? async_wrap(new GpuStatReader(amdgpu_hwmon_dir)) : null;
 
   foreach (process_name; process_names) {

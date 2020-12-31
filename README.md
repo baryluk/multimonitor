@@ -1,32 +1,70 @@
-Multimonitor
+# Multimonitor
 
-A convinient command line utility to log system and process metrics.
+**A convenient command line utility to log system and process metrics.**
 
 ```
-$ multimonitor --gpu --pids 1,2
+$ ./multimonitor --utc_nice --gpu=min --process valley_x64 --process Xorg 
+Waiting for process valley_x64
+Waiting for process valley_x64
+Waiting for process valley_x64
+Waiting for process valley_x64
+For process name valley_x64 found pids: [1996445]
+For process name Xorg found pids: [2066]
 ticks_per_second: 100
 With interval 200 ms and 100 ticks/s, expect CPU% error of +/- 5.0%
-                                                                                                 kthreadd
-                                                                              systemd                 |
-                                                                                  |                   |
-                                                                                  1                   2
-SECONDS-FROM-EPOCH            TIME      RELTIME    GPU%      VRAM     SCLK      CPU%        RSS     CPU%        RSS
- 1609452858.409569   708802.292573     0.200313    nan%    nanMiB    nanMHz    0.00%      12MiB    0.00%       0MiB
- 1609452858.609576   708802.492183     0.399923    nan%    nanMiB    nanMHz    0.00%      12MiB    0.00%       0MiB
- 1609452858.809582   708802.692360     0.600100    nan%    nanMiB    nanMHz    0.00%      12MiB    0.00%       0MiB
- 1609452859.009588   708802.892270     0.800009    nan%    nanMiB    nanMHz    0.00%      12MiB    0.00%       0MiB
- 1609452859.209594   708803.092325     1.000065    0.0%  420.2MiB  472.2MHz    0.00%      12MiB    0.00%       0MiB
- 1609452859.409600   708803.292592     1.200331    0.0%  420.2MiB  472.2MHz    4.99%      12MiB    0.00%       0MiB
- 1609452859.609606   708803.492177     1.399916    0.0%  420.2MiB  472.2MHz    0.00%      12MiB    0.00%       0MiB
- 1609452859.809613   708803.692362     1.600102    0.0%  438.4MiB  475.8MHz    0.00%      12MiB    0.00%       0MiB
- 1609452860.009619   708803.892266     1.800006    0.0%  438.4MiB  475.8MHz    0.00%      12MiB    0.00%       0MiB
- 1609452860.209625   708804.092313     2.000052    0.0%  438.4MiB  475.8MHz    0.00%      12MiB    0.00%       0MiB
- 1609452860.409631   708804.292311     2.200050    0.0%  438.4MiB  475.8MHz    0.00%      12MiB    0.00%       0MiB
- 1609452860.609637   708804.492318     2.400058    0.0%  438.4MiB  475.8MHz    0.00%      12MiB    0.00%       0MiB
- 1609452860.809643   708804.692287     2.600026    0.0%  435.2MiB  730.0MHz    0.00%      12MiB    0.00%       0MiB
- 1609452861.009650   708804.892418     2.800157    0.0%  435.2MiB  730.0MHz    0.00%      12MiB    0.00%       0MiB
- 1609452861.209656   708805.092253     2.999993    0.0%  435.2MiB  730.0MHz    0.00%      12MiB    0.00%       0MiB
- 1609452861.409662   708805.292340     3.200079    0.0%  435.2MiB  730.0MHz    0.00%      12MiB    0.00%       0MiB
+                                                                                                            Xorg
+                                                                                     valley_x64               |
+                                                                                          |                   |
+                                                                                      1996445                2066
+              DATETIME UTC            TIME      RELTIME    GPU%      VRAM      SCLK     CPU%        RSS     CPU%        RSS
+2020-12-31T22:28:44.688313   709668.550807     0.200063    0.0%  309.6MiB  386.7MHz    0.00%      77MiB    5.00%     407MiB
+2020-12-31T22:28:44.888319   709668.750763     0.400018    0.0%  309.6MiB  386.7MHz    0.00%      77MiB    0.00%     407MiB
+2020-12-31T22:28:45.088325   709668.950799     0.600054    0.0%  311.6MiB  326.5MHz   15.00%      82MiB   10.00%     407MiB
+2020-12-31T22:28:45.288331   709669.150770     0.800025    0.0%  311.6MiB  326.5MHz    0.00%      82MiB    0.00%     407MiB
+2020-12-31T22:28:45.488337   709669.350800     1.000056    0.0%  311.6MiB  326.5MHz    0.00%      82MiB   10.00%     407MiB
+2020-12-31T22:28:45.688343   709669.550775     1.200030    0.0%  311.6MiB  326.5MHz    0.00%      82MiB    5.00%     407MiB
+2020-12-31T22:28:45.888350   709669.750795     1.400050    0.0%  311.6MiB  326.5MHz    0.00%      82MiB    5.00%     407MiB
+2020-12-31T22:28:46.088356   709669.950932     1.600187    0.0%  311.6MiB  326.5MHz    0.00%      82MiB    0.00%     407MiB
+2020-12-31T22:28:46.288362   709670.150692     1.799947    0.0%  294.1MiB  588.2MHz    5.01%      82MiB    5.01%     407MiB
+2020-12-31T22:28:46.488368   709670.350815     2.000071    0.0%  294.1MiB  588.2MHz    0.00%      82MiB    5.00%     407MiB
+2020-12-31T22:28:46.688374   709670.550755     2.200010    0.0%  294.1MiB  588.2MHz    5.00%      82MiB    5.00%     407MiB
+2020-12-31T22:28:46.888381   709670.750808     2.400063    0.0%  294.1MiB  588.2MHz    0.00%      82MiB   10.00%     407MiB
+2020-12-31T22:28:47.088387   709670.950767     2.600023    0.0%  294.1MiB  588.2MHz    0.00%      82MiB    5.00%     407MiB
+2020-12-31T22:28:47.288393   709671.150816     2.800071    0.0%  298.2MiB  724.0MHz    5.00%      82MiB   10.00%     407MiB
+2020-12-31T22:28:47.488399   709671.350754     3.000009    0.0%  298.2MiB  724.0MHz    0.00%      82MiB    0.00%     407MiB
+2020-12-31T22:28:47.688405   709671.550808     3.200063    0.0%  298.2MiB  724.0MHz    0.00%      82MiB    0.00%     407MiB
+2020-12-31T22:28:47.888411   709671.750837     3.400093    0.0%  298.2MiB  724.0MHz    0.00%      82MiB    5.00%     407MiB
+2020-12-31T22:28:48.088418   709671.950742     3.599998    0.0%  298.2MiB  724.0MHz    0.00%      82MiB    0.00%     407MiB
+```
+
+![](example_plot_valley.png)
+
+
+## Options
+
+```
+Multimonitor - sample information about system and processes.
+        --interval_msec Target interval for main metric sampling and output. (default: 200ms)
+              --process List of process names to monitor
+                 --pids List of process pids to monitor
+          --process_map Assign short names to processes, i.e. a=firefox,b=123
+                 --temp CPU temperature
+                --sched CPU scheduler details
+                   --vm Virtual memory subsystem
+           --interrupts Interrupts details
+                   --io System-wide IO details
+                  --net System-wide networking metrics
+                  --gpu Gather GPU stats. Available: none, min, max
+         --mangohud_fps Gather FPS information for given processes using MangoHud RPC
+         --wait_for_all Wait until all named processes are up
+   --find_new_when_dead If the named process is dead, try searching again
+       --exit_when_dead Stop collecting metrics and exit, when any of requested pids exits too
+     --sum_all_matching For named processes, sum all matching processes metrics (sum CPU, smart memory sum)
+          --auto_output Automatically create timestamped output file in current working directory with data, instead of using standard output
+             --utc_nice Show first column as ISO 8601 formated date and time in UTC timezone. Otherwise use seconds since Unix epoch.
+-H     --human_friendly Use human friendly (pretty) but still fixed units (default: true)
+              --verbose Show timeing loop debug info
+-h               --help This help information.
 ```
 
 Primary purpose is debugging processes, system load, memory usage, memory
@@ -36,7 +74,7 @@ Combination of ps, top, iotop, powertop, radeontop, vmstat, free, mpstat,
 pidstat, slabtop, cpufreq-info, mangohud and more, all in one. In some
 areas the accuracy is significantly better than any of the above tools.
 
-Supported:
+## Supported
   * Extremally accurate timestamps. Absolute (ISO 8601),
     monotonic from system start, and relative from tool startup.
   * Very accurate repetition rate (usually <10us).
@@ -173,7 +211,7 @@ setup. I.e. Prometheus can't really do sub-second scraping, and was too
 inaccurate at high repetition rates, and took hours to setup or fully
 automate.
 
-Future / TODO:
+## Future / TODO:
   * Linux perf integration, i.e. IPC, context switches, CPU migrations, cache
     hits / misses, TLS misses, branch mispredicions, etc.
   * Use pidfd or dirfd/openat for processing processes in /proc. Similary for
@@ -236,10 +274,11 @@ Future / TODO:
     format, with output file rotation.
 
 
-Explicitly not planned:
+## Explicitly not planned:
   * Data logging
   * Event logging
   * Streaming
   * Query language integration
   * Corss-machine integration
   * Windows or MacOS support.
+
