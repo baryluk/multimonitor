@@ -2,6 +2,33 @@ Multimonitor
 
 A convinient command line utility to log system and process metrics.
 
+```
+$ multimonitor --gpu --pids 1,2
+ticks_per_second: 100
+With interval 200 ms and 100 ticks/s, expect CPU% error of +/- 5.0%
+                                                                                                 kthreadd
+                                                                              systemd                 |
+                                                                                  |                   |
+                                                                                  1                   2
+SECONDS-FROM-EPOCH            TIME      RELTIME    GPU%      VRAM     SCLK      CPU%        RSS     CPU%        RSS
+ 1609452858.409569   708802.292573     0.200313    nan%    nanMiB    nanMHz    0.00%      12MiB    0.00%       0MiB
+ 1609452858.609576   708802.492183     0.399923    nan%    nanMiB    nanMHz    0.00%      12MiB    0.00%       0MiB
+ 1609452858.809582   708802.692360     0.600100    nan%    nanMiB    nanMHz    0.00%      12MiB    0.00%       0MiB
+ 1609452859.009588   708802.892270     0.800009    nan%    nanMiB    nanMHz    0.00%      12MiB    0.00%       0MiB
+ 1609452859.209594   708803.092325     1.000065    0.0%  420.2MiB  472.2MHz    0.00%      12MiB    0.00%       0MiB
+ 1609452859.409600   708803.292592     1.200331    0.0%  420.2MiB  472.2MHz    4.99%      12MiB    0.00%       0MiB
+ 1609452859.609606   708803.492177     1.399916    0.0%  420.2MiB  472.2MHz    0.00%      12MiB    0.00%       0MiB
+ 1609452859.809613   708803.692362     1.600102    0.0%  438.4MiB  475.8MHz    0.00%      12MiB    0.00%       0MiB
+ 1609452860.009619   708803.892266     1.800006    0.0%  438.4MiB  475.8MHz    0.00%      12MiB    0.00%       0MiB
+ 1609452860.209625   708804.092313     2.000052    0.0%  438.4MiB  475.8MHz    0.00%      12MiB    0.00%       0MiB
+ 1609452860.409631   708804.292311     2.200050    0.0%  438.4MiB  475.8MHz    0.00%      12MiB    0.00%       0MiB
+ 1609452860.609637   708804.492318     2.400058    0.0%  438.4MiB  475.8MHz    0.00%      12MiB    0.00%       0MiB
+ 1609452860.809643   708804.692287     2.600026    0.0%  435.2MiB  730.0MHz    0.00%      12MiB    0.00%       0MiB
+ 1609452861.009650   708804.892418     2.800157    0.0%  435.2MiB  730.0MHz    0.00%      12MiB    0.00%       0MiB
+ 1609452861.209656   708805.092253     2.999993    0.0%  435.2MiB  730.0MHz    0.00%      12MiB    0.00%       0MiB
+ 1609452861.409662   708805.292340     3.200079    0.0%  435.2MiB  730.0MHz    0.00%      12MiB    0.00%       0MiB
+```
+
 Primary purpose is debugging processes, system load, memory usage, memory
 leaks, GPU usage, framerate tests, etc.
 
