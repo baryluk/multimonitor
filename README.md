@@ -382,6 +382,11 @@ setup. I.e. Prometheus can't really do sub-second scraping, and was too
 inaccurate at high repetition rates, and took hours to setup or fully
 automate.
 
+With `multimonitor` graphs like this to do comparissons of many metrics
+between different setups are easy to do:
+
+![](example_plot_valley_vs.png)
+
 ## Future / TODO:
   * Linux perf integration, i.e. IPC, context switches, CPU migrations, cache
     hits / misses, TLS misses, branch mispredicions, etc.
