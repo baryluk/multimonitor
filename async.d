@@ -6,7 +6,10 @@
 //
 // 'Reader' must implement `read` and `format` methods.
 // `format` method can be static.
-auto async_wrap(R)(R reader) {
+
+import core.time : Duration;
+
+auto async_wrap(R)(R reader, const Duration async_delay) {
   import core.thread : Thread;
   import core.sync.mutex : Mutex;
 
@@ -49,8 +52,20 @@ auto async_wrap(R)(R reader) {
     // Forward header and format calls directly to `reader_`.
     //alias reader_ this;
 
+    import std.traits : hasFunctionAttributes;
+
+    // __traits(isStaticFunction, reader_.header)
+
+    // static if (__traits(getFunctionAttributes, reader_.header)
+
+    static if (hasFunctionAttributes!(reader_.header, "const")) {
     string[] header(bool human_friendly) const {
       return reader_.header(human_friendly);
+    }
+    } else {
+    string[] header(bool human_friendly) {
+      return reader_.header(human_friendly);
+    }
     }
 
     import std.array : Appender;
@@ -61,8 +76,8 @@ auto async_wrap(R)(R reader) {
 
    private:
     void thread_loop() {
-      import core.time : dur;
       m_.lock();
+      // TODO(baryluk): Reuse time.time_loop here?
       while (!stop_) {
         m_.unlock();
         const ReadResult new_read = reader_.read();
@@ -70,7 +85,7 @@ auto async_wrap(R)(R reader) {
         last_read_ = new_read;
         last_read_consumed_ = false;
         m_.unlock();
-        Thread.sleep(dur!"msecs"(100));
+        Thread.sleep(async_delay);
         m_.lock();
       }
     }

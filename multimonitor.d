@@ -12,6 +12,7 @@ import hwmon;
 import gpu;
 import cpu;
 import proc;
+import exec;
 
 import async : async_wrap;
 
@@ -61,10 +62,16 @@ int main(string[] args) {
   enum GpuStuff { none, min, max, }
   GpuStuff gpu_stuff;
 
+  string[] exec;
+  string[] exec_async;
+  string[] pipe;
+
   bool auto_output;
   bool utc_nice;
   bool human_friendly = true;
   bool verbose;
+
+  uint async_delay_msec = 200;
 
   arraySep = ",";  // defaults to "", separation by whitespace
 
@@ -87,13 +94,19 @@ int main(string[] args) {
     "net",                "System-wide networking metrics", &interrupts,
     "gpu",                "Gather GPU stats. Available: none, min, max", &gpu_stuff,
     "mangohud_fps",       "Gather FPS information for given processes using MangoHud RPC", &mangohud_fps,
+    // TODO(baryluk): It would be nice to preserve relative order when varoius options are mixed.
+    "exec",               "Run external command with arbitrary output once per sample", &exec,
+    "exec_async",         "Run external command with arbitrary output asynchronously", &exec_async,
+    "pipe",               "Run external command and consume output lines as they come", &pipe,
+    // TODO(baryluk): It would be nice, to default to interval_msec.
+    "async_delay_msec",   "Change how often to run --exec_async and --gpu commands. (default: 200ms)", &async_delay_msec,
     "wait_for_all",       "Wait until all named processes are up", &wait_for_all,
     "find_new_when_dead", "If the named process is dead, try searching again", &find_new_when_dead,
     "exit_when_dead",     "Stop collecting metrics and exit, when any of requested pids exits too", &exit_when_dead,
     "sum_all_matching",   "For named processes, sum all matching processes metrics (sum CPU, smart memory sum)", &sum_all_matching,
     "auto_output",        "Automatically create timestamped output file in current working directory with data, instead of using standard output", &auto_output,
     "utc_nice",           "Show first column as ISO 8601 formated date and time in UTC timezone. Otherwise use seconds since Unix epoch.", &utc_nice,
-    "H|human_friendly",   "Use human friendly (pretty) but still fixed units (default: true)", &human_friendly,
+    "H|human_friendly",   "Use human friendly (pretty), but still fixed units (default: true)", &human_friendly,
     "verbose",            "Show timeing loop debug info", &verbose
   );
 
@@ -108,9 +121,10 @@ int main(string[] args) {
   }
 
   const interval = dur!"msecs"(interval_msec);
+  const async_delay = dur!"msecs"(async_delay_msec);
 
   auto amdgpu_hwmon_dir = gpu_stuff != GpuStuff.none ? searchHWMON("amdgpu") : null;
-  auto gpu_stat_reader = amdgpu_hwmon_dir !is null ? async_wrap(new GpuStatReader(amdgpu_hwmon_dir)) : null;
+  auto gpu_stat_reader = amdgpu_hwmon_dir !is null ? async_wrap(new GpuStatReader(amdgpu_hwmon_dir), async_delay) : null;
 
   foreach (process_name; process_names) {
     bool found = false;
@@ -130,14 +144,38 @@ int main(string[] args) {
   //PidProcStatReader[] pid_readers = pids.map(x => new PidProcStatReader(x));
   PidProcStatReader[] pid_readers = pids.map!(x => new PidProcStatReader(x)).array;
 
-  const ticks_per_second = TickPerSecond();
-
-  writefln("ticks_per_second: %d", ticks_per_second);
-
   PidProcStat[] prev;
   prev.length = pids.length;
   PidProcStat[] next;
   next.length = pids.length;
+
+  // TODO(baryluk): It would be nice to preserve relative order when varoius options are mixed.
+  ExecReader[] exec_readers = exec.map!(x => new ExecReader(x)).array;
+  auto exec_async_readers = exec_async.map!(x => async_wrap(new ExecReader(x), async_delay)).array;
+  auto pipe_readers = pipe.map!(x => async_wrap(new PipeReader(x), async_delay)).array;
+
+  // At the moment, we can't append all to the same array, 
+  // because async_wrap returns different type, and we don't
+  // have dynamic interfaces to support inheritance.
+
+  ExecResult[] exec_prev;
+  exec_prev.length = exec_readers.length;
+  ExecResult[] exec_next;
+  exec_next.length = exec_readers.length;
+
+  ExecResult[] exec_async_prev;
+  exec_async_prev.length = exec_async_readers.length;
+  ExecResult[] exec_async_next;
+  exec_async_next.length = exec_async_readers.length;
+
+  ExecResult[] pipe_prev;
+  pipe_prev.length = pipe_readers.length;
+  ExecResult[] pipe_next;
+  pipe_next.length = pipe_readers.length;
+
+  const ticks_per_second = TickPerSecond();
+
+  writefln("ticks_per_second: %d", ticks_per_second);
 
 //  100 ticks per second. 0.01 per tick.
 //  200ms.
@@ -264,6 +302,16 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
     prev[i] = pid_reader.read();
   }
 
+  foreach (i, exec_reader; exec_readers) {
+    exec_prev[i] = exec_reader.read();
+  }
+  foreach (i, exec_async_reader; exec_async_readers) {
+    exec_async_prev[i] = exec_async_reader.read();
+  }
+  foreach (i, pipe_reader; pipe_readers) {
+    pipe_prev[i] = pipe_reader.read();
+  }
+
   const unix_epoch = UnixEpoch();
 
   GpuStat gpu_prev, gpu_next;
@@ -323,6 +371,16 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
     foreach (i, pid_reader; pid_readers) {
       next[i] = pid_reader.read();
     }
+
+    foreach (i, exec_reader; exec_readers) {
+      exec_next[i] = exec_reader.read();
+    }
+    foreach (i, exec_async_reader; exec_async_readers) {
+      exec_async_next[i] = exec_async_reader.read();
+    }
+    foreach (i, pipe_reader; pipe_readers) {
+      pipe_next[i] = pipe_reader.read();
+    }
     // writefln("%20s usec: %s usec", (scrape_time - start_time).total!"usecs", (next[0].timestamp - prev[0].timestamp).total!"usecs");
 
     if (gpu_stat_reader) {
@@ -358,14 +416,38 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
         pid_readers[i].format(w, prev[i], next[i], human_friendly);
       }
 
+      foreach (i, exec_reader; exec_readers) {
+        w.put(' ');
+        exec_reader.format(w, exec_prev[i], exec_next[i], human_friendly);
+      }
+
+      foreach (i, exec_async_reader; exec_async_readers) {
+        w.put(' ');
+        exec_async_reader.format(w, exec_async_prev[i], exec_async_next[i], human_friendly);
+      }
+
+      foreach (i, pipe_reader; pipe_readers) {
+        w.put(' ');
+        pipe_reader.format(w, pipe_prev[i], pipe_next[i], human_friendly);
+      }
+
       writeln(w[]);
     } else {
       // writefln!("jump detected from %d to %d")(prev_j, j);
     }
 
-    gpu_prev = gpu_next;
     foreach (i, pid; pids) {
       prev[i] = next[i];
+    }
+    gpu_prev = gpu_next;
+    foreach (i, exec_reader; exec_readers) {
+      exec_prev[i] = exec_next[i];
+    }
+    foreach (i, exec_async_reader; exec_async_readers) {
+      exec_async_prev[i] = exec_async_next[i];
+    }
+    foreach (i, pipe_reader; pipe_readers) {
+      pipe_prev[i] = pipe_next[i];
     }
   }
 

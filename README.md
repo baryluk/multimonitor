@@ -3,7 +3,7 @@
 **A convenient command line utility to log system and process metrics.**
 
 ```
-$ ./multimonitor --utc_nice --gpu=min --process valley_x64 --process Xorg 
+$ multimonitor --utc_nice --gpu=min --process valley_x64 --process Xorg 
 Waiting for process valley_x64
 Waiting for process valley_x64
 Waiting for process valley_x64
@@ -56,13 +56,17 @@ Multimonitor - sample information about system and processes.
                   --net System-wide networking metrics
                   --gpu Gather GPU stats. Available: none, min, max
          --mangohud_fps Gather FPS information for given processes using MangoHud RPC
+                 --exec Run external command with arbitrary output once per sample
+           --exec_async Run external command with arbitrary output asynchronously
+                 --pipe Run external command and consume output lines as they come
+     --async_delay_msec Change how often to run --exec_async and --gpu commands. (default: 200ms)
          --wait_for_all Wait until all named processes are up
    --find_new_when_dead If the named process is dead, try searching again
        --exit_when_dead Stop collecting metrics and exit, when any of requested pids exits too
      --sum_all_matching For named processes, sum all matching processes metrics (sum CPU, smart memory sum)
           --auto_output Automatically create timestamped output file in current working directory with data, instead of using standard output
              --utc_nice Show first column as ISO 8601 formated date and time in UTC timezone. Otherwise use seconds since Unix epoch.
--H     --human_friendly Use human friendly (pretty) but still fixed units (default: true)
+-H     --human_friendly Use human friendly (pretty), but still fixed units (default: true)
               --verbose Show timeing loop debug info
 -h               --help This help information.
 ```
@@ -135,6 +139,173 @@ mess things up. It also means the logs produced now, will have exactly
 same format and units as the ones produced years from now, no matter the
 used options. Which is great for comparing measurements with year old
 logs.
+
+## Example of various modes
+
+### `--utc_nice`
+
+```
+$ multimonitor --utc_nice
+              DATETIME UTC            TIME      RELTIME
+2020-12-31T22:28:44.688313   709668.550807     0.200063
+2020-12-31T22:28:44.888319   709668.750763     0.400018
+2020-12-31T22:28:45.088325   709668.950799     0.600054
+```
+
+Without, seconds since Unix Epoch are output in the first column instead.
+
+```
+# multimonitor ...
+SECONDS-FROM-EPOCH            TIME      RELTIME
+ 1609465795.020941   721738.570333     0.200061
+ 1609465795.220947   721738.770319     0.400047
+ 1609465795.424953   721738.970353     0.600081
+ 1609465795.620959   721739.170320     0.800048
+```
+
+### `--pids`
+
+Monitor CPU and RSS of processes by PID.
+
+```
+$ multimonitor --pids 1
+                                                   systemd
+                                                       |
+                                                       1
+SECONDS-FROM-EPOCH            TIME      RELTIME     CPU%        RSS
+ 1609465795.020941   721738.570333     0.200061    0.00%      12MiB
+ 1609465795.220947   721738.770319     0.400047    0.00%      12MiB
+ 1609465795.424953   721738.970353     0.600081    0.00%      12MiB
+ 1609465795.620959   721739.170320     0.800048    0.00%      12MiB
+ 1609465795.824966   721739.370335     1.000063    0.00%      12MiB
+ 1609465796.020972   721739.570303     1.200031    0.00%      12MiB
+ 1609465796.224978   721739.770336     1.400064    0.00%      12MiB
+```
+
+Multiple PIDs can be specified, as a comma separated list (`--pids 1,2,3`), or repeated arguments (`--pids 1 --pids 2`).
+
+Columns will be ordered in the same order as requested pid in the list(s).
+
+Above each `CPU%` figure a name of the process (`comm`) will be displayed,
+together with its pid.
+
+### `--process`
+
+Monitor CPU and RSS of process similar to `--pid`, but instead search for
+process by name. Additionally by default, logging (and `RELTIME`) will not
+start counting until all requested processes are found.
+
+```
+$ multimonitor --process steam
+Waiting for process steam
+Waiting for process steam
+Waiting for process steam
+For process name steam found pids: [2066]
+                                                    steam
+                                                       |
+                                                    2066
+SECONDS-FROM-EPOCH            TIME      RELTIME     CPU%        RSS
+ 1609465961.498080   721905.041175     0.200079   14.99%     405MiB
+ 1609465961.694086   721905.241138     0.400043   10.00%     405MiB
+ 1609465961.894092   721905.441157     0.600062   15.00%     405MiB
+```
+
+### `--gpu`
+
+```
+$ multimonitor --utc_nice --gpu=min
+              DATETIME UTC            TIME      RELTIME    GPU%      VRAM      SCLK
+2020-12-31T22:28:44.688313   709668.550807     0.200063    0.0%  309.6MiB  386.7MHz
+2020-12-31T22:28:44.888319   709668.750763     0.400018    0.0%  309.6MiB  386.7MHz
+2020-12-31T22:28:45.088325   709668.950799     0.600054    0.0%  311.6MiB  326.5MHz
+```
+
+### `--pipe`
+
+Launches an asynchronous process and reads back lines from each. The
+process should output fixed width and consistent output on each line.
+
+```
+$ multimonitor --pipe "while true; do date '+%s.%N'; sleep 1; done" \
+               --pipe "while true; do cat /proc/loadavg; sleep 1; done" \
+              --pipe "while true; do cat /proc/uptime; sleep 1; done"
+SECONDS-FROM-EPOCH            TIME      RELTIME
+ 1609465621.259576   721564.812290     0.200065 1609465621.112124784 3.44 3.73 3.86 4/1628 2125166 721583.31 22579423.26
+ 1609465621.459583   721565.012258     0.400033 1609465621.112124784 3.44 3.73 3.86 4/1628 2125166 721583.31 22579423.26
+ 1609465621.659589   721565.212438     0.600213 1609465621.112124784 3.44 3.73 3.86 4/1628 2125166 721583.31 22579423.26
+```
+
+### `--exec`
+
+Executes synchronously external command on each sample. Newlines from the
+output are converted to spaces.
+
+```
+$ multimonitor --exec "awk '/^(nr_free_pages|nr_zone_inactive_anon)/ {print \$2;}' /proc/vmstat"
+SECONDS-FROM-EPOCH            TIME      RELTIME
+ 1609478558.602970   734501.821340     0.200089 13816115 8242963
+ 1609478558.802977   734502.021271     0.400020 13816141 8243038
+ 1609478559.002983   734502.221306     0.600056 13816141 8243046
+ 1609478559.202989   734502.421289     0.800038 13816141 8243050
+ 1609478559.402995   734502.621292     1.000041 13816177 8243169
+```
+
+### `--exec_async`
+
+Executes asynchronously external command. Newlines from the output are converted to spaces.
+
+
+```
+$ multimonitor --exec_async 'echo 42 $(date +%s.%N)'
+SECONDS-FROM-EPOCH            TIME      RELTIME
+ 1609476390.052024   732333.326417     0.200084 42 1609476390.058566475
+ 1609476390.252030   732333.526350     0.400016 42 1609476390.258601844
+ 1609476390.452037   732333.726391     0.600057 42 1609476390.458978396
+ 1609476390.652043   732333.926383     0.800050 42 1609476390.658840135
+```
+
+Caching behaviour can be changed with `--async_delay_msec` (default: 200ms).
+
+A difference between the two can be ilustrated here:
+
+```
+$ multimonitor --exec "date +%s.%N" \
+               --exec_async "date +%s.%N" \
+               --async_delay_msec=1000
+SECONDS-FROM-EPOCH            TIME      RELTIME
+ 1609478808.394682   734751.606517     0.200071 1609478808.401597625 1609478808.200443789
+ 1609478808.594688   734751.806484     0.400039 1609478808.601534096 1609478808.200443789
+ 1609478808.794694   734752.006507     0.600062 1609478808.801675976 1609478808.200443789
+ 1609478808.994700   734752.206494     0.800049 1609478809.001560833 1609478808.200443789
+ 1609478809.194707   734752.406500     1.000055 1609478809.201414051 1609478808.200443789
+ 1609478809.394713   734752.606497     1.200052 1609478809.401672778 1609478809.202125682
+ 1609478809.594719   734752.806509     1.400064 1609478809.601640469 1609478809.202125682
+ 1609478809.794725   734753.006488     1.600043 1609478809.801603550 1609478809.202125682
+ 1609478809.994731   734753.206505     1.800060 1609478810.001602391 1609478809.202125682
+ 1609478810.194737   734753.406499     2.000053 1609478810.201564425 1609478809.202125682
+ 1609478810.394744   734753.606650     2.200204 1609478810.401723765 1609478810.203523733
+ 1609478810.594750   734753.806403     2.399958 1609478810.601920961 1609478810.203523733
+ 1609478810.794756   734754.006529     2.600083 1609478810.801647833 1609478810.203523733
+ 1609478810.994762   734754.206483     2.800037 1609478811.001605257 1609478810.203523733
+ 1609478811.194768   734754.406504     3.000059 1609478811.201543125 1609478810.203523733
+ 1609478811.394774   734754.606501     3.200056 1609478811.401612507 1609478811.204954820
+ 1609478811.594781   734754.806497     3.400051 1609478811.601693833 1609478811.204954820
+```
+
+Notice how the `--exec` part is executed every sample, but `--exec_async`
+on average is executed every 5 samples.
+
+`--exec_async` is excellent for more expensive computations, like
+calculating a hash of a file, traversing big filesystem tree, reading
+from network, or reading sysfs files that could be very slow. While the
+command is executing, the previous saved state will be displayed,
+allowing one to continue logging uninterrupted other things.
+
+In `--pipe`, `--exec` and `--exec_async` be aware of shell escaping
+rules. This is quite important for example when using `awk`. See examples
+above how it could be made to work.
+
+## Notes
 
 Multimonitor is written in D programming language, and can be compiled
 using GDC, LDC2 or DMD compilers. Multimonitor does use D standard
