@@ -62,7 +62,7 @@ set key outside right top
 set key Left reverse samplen 0.75
 
 
-filenames = system("ls -1 /tmp/valley-mm-*.txt")
+filenames = system("ls -1 /tmp/valley-mm-*.txt | grep radeon")
 filename = "/tmp/valley-mm-zink.txt"
 
 set yrange [0:]

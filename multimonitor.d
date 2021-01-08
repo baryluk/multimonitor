@@ -22,7 +22,7 @@ import async : async_wrap;
 int main(string[] args) {
   import std.algorithm : map;
   import std.conv : to;
-  import std.stdio : writefln, writef, writeln;
+  import std.stdio : writefln, writef, writeln, stderr;
   import core.thread : Thread;
   import core.time : dur;
   import std.array : array;
@@ -31,6 +31,7 @@ int main(string[] args) {
   import std.getopt;
 
   uint interval_msec = 200;
+  uint duration_sec = uint.max;
   string[] process_names;
   uint[] pids;
   string[string] process_map;
@@ -51,10 +52,13 @@ int main(string[] args) {
   // processes matching the name periodically.
   bool sum_all_matching;
 
+  bool cpu;
+  bool load;
   bool temp;
   bool sched;
   bool vm;
   bool interrupts;
+  bool ctx;
   bool io;
   bool net;
   string[] mangohud_fps;
@@ -65,15 +69,22 @@ int main(string[] args) {
   string[] exec;
   string[] exec_async;
   string[] pipe;
+  string[] sub;
 
   bool auto_output;
+  enum TimeMode { relative, boottime, absolute, all, }
+  TimeMode time_mode = TimeMode.all;
   bool utc_nice;
+  bool buffered;
   bool human_friendly = true;
+  bool csv;
   bool verbose;
 
   uint async_delay_msec = 200;
 
   arraySep = ",";  // defaults to "", separation by whitespace
+
+  const string[] args_copy = args.idup;
 
   const bool empty_args = (args.length <= 1);
 
@@ -82,17 +93,20 @@ int main(string[] args) {
   auto helpInformation = getopt(
     args,
     std.getopt.config.caseSensitive,
-    "interval_msec",      "Target interval for main metric sampling and output. (default: 200ms)",   &interval_msec,
+    "sub",                "Launch a single external command, monitor it just like --pid and finish once it finishes", &sub,
+    "pids|pid",           "List of process pids to monitor", &pids,
     "process",            "List of process names to monitor", &process_names,
-    "pids",               "List of process pids to monitor", &pids,
     "process_map",        "Assign short names to processes, i.e. a=firefox,b=123", &process_map,
+    "cpu",                "Overall CPU stats, i.e. load, average and max frequency", &cpu,
+    "load",               "System-wide load average", &load,
     "temp",               "CPU temperature", &temp,
-    "sched",              "CPU scheduler details", &sched,
-    "vm",                 "Virtual memory subsystem", &sched,
-    "interrupts",         "Interrupts details", &interrupts,
-    "io",                 "System-wide IO details", &interrupts,
-    "net",                "System-wide networking metrics", &interrupts,
-    "gpu",                "Gather GPU stats. Available: none, min, max", &gpu_stuff,
+    "sched",              "System-wide CPU scheduler details", &sched,
+    "vm",                 "System-wide virtual memory subsystem details", &vm,
+    "interrupts",         "System-wide interrupts details", &interrupts,
+    "ctx",                "System-wide context switching metrics", &ctx,
+    "io",                 "System-wide IO details", &io,
+    "net",                "System-wide networking metrics", &net,
+    "gpu",                "System-wide GPU stats. Available: none, min, max", &gpu_stuff,
     "mangohud_fps",       "Gather FPS information for given processes using MangoHud RPC", &mangohud_fps,
     // TODO(baryluk): It would be nice to preserve relative order when varoius options are mixed.
     "exec",               "Run external command with arbitrary output once per sample", &exec,
@@ -104,9 +118,14 @@ int main(string[] args) {
     "find_new_when_dead", "If the named process is dead, try searching again", &find_new_when_dead,
     "exit_when_dead",     "Stop collecting metrics and exit, when any of requested pids exits too", &exit_when_dead,
     "sum_all_matching",   "For named processes, sum all matching processes metrics (sum CPU, smart memory sum)", &sum_all_matching,
-    "auto_output",        "Automatically create timestamped output file in current working directory with data, instead of using standard output", &auto_output,
-    "utc_nice",           "Show first column as ISO 8601 formated date and time in UTC timezone. Otherwise use seconds since Unix epoch.", &utc_nice,
-    "H|human_friendly",   "Use human friendly (pretty), but still fixed units (default: true)", &human_friendly,
+    "auto_output",        "Automatically create timestamped output file in current working directory with data, instead of using standard output. (default: false)", &auto_output,
+    "interval_msec",      "Target interval for main metric sampling and output. (default: 200ms)",   &interval_msec,
+    "duration_sec",       "How long to log. (default: forever)", &duration_sec,
+    "time",               "Time mode, one of: relative, boottime, absolute, all. (default: all)", &time_mode,
+    "utc_nice",           "Show abssolute time as ISO 8601 formated date and time in UTC timezone. Otherwise Unix time is printed. (default: false).", &utc_nice,
+    "buffered",           "Use buffered output. (default: false)", &buffered,
+    "H|human_friendly",   "Use human friendly (pretty), but still fixed units. Otherwise strip units. (default: true)", &human_friendly,
+    "csv",                "Use (mostly) CSV format, with variable width columns. (default: false)", &csv,
     "verbose",            "Show timeing loop debug info", &verbose
   );
 
@@ -121,6 +140,7 @@ int main(string[] args) {
   }
 
   const interval = dur!"msecs"(interval_msec);
+  const duration = duration_sec != duration_sec.max ? dur!"seconds"(duration_sec) : Duration.max;
   const async_delay = dur!"msecs"(async_delay_msec);
 
   auto amdgpu_hwmon_dir = gpu_stuff != GpuStuff.none ? searchHWMON("amdgpu") : null;
@@ -131,32 +151,55 @@ int main(string[] args) {
     do {
       int[] pids0 = find_process_by_name(process_name);
       if (pids0.length == 0) {
-        writefln("Waiting for process %s", process_name);
+        stderr.writefln!"# Waiting for process %s"(process_name);
         Thread.sleep(interval);
         continue;
       }
-      writefln("For process name %s found pids: %s", process_name, pids0);
+      stderr.writefln!"# For process name %s found pids: %s"(process_name, pids0);
       pids ~= pids0;
       found = true;
     } while (!found);
   }
 
-  //PidProcStatReader[] pid_readers = pids.map(x => new PidProcStatReader(x));
-  PidProcStatReader[] pid_readers = pids.map!(x => new PidProcStatReader(x)).array;
+  import std.process : Pid, spawnShell;
+
+  Pid[] pids_to_wait;
+  foreach (ref sub_process; sub) {
+    // This is a quick and dirty method, but should do the job.
+    // BTW. spawnShell takes care of closing all other file descriptors,
+    // before executing the sub in the shell in forked process.
+    //
+    // TODO(baryluk): Possible improvement might be to close
+    // stdin too for all spawned sub-processes.
+    auto pid = spawnShell(sub_process);
+    pids_to_wait ~= pid;
+    // pids ~= pid.processID;
+  }
+
+  PidProcStatReader[] pid_readers = pids.map!(x => new PidProcStatReader(x)).array ~ pids_to_wait.map!(x => new PidProcStatReader(x.processID, x)).array;
+
+  // TODO(baryluk): Support tids. pid and tid are the same from Linux kernel
+  // perspective, but `/proc/<pid>/{sched,}stat` sum all threads. To access specific
+  // thread only one needs to do `/proc/<pid>/task/<tid>/{sched,}stat`, which
+  // require a bit of prod file system traversal to find them out.
 
   PidProcStat[] prev;
-  prev.length = pids.length;
+  prev.length = pid_readers.length;
   PidProcStat[] next;
-  next.length = pids.length;
+  next.length = pid_readers.length;
 
   // TODO(baryluk): It would be nice to preserve relative order when varoius options are mixed.
   ExecReader[] exec_readers = exec.map!(x => new ExecReader(x)).array;
   auto exec_async_readers = exec_async.map!(x => async_wrap(new ExecReader(x), async_delay)).array;
   auto pipe_readers = pipe.map!(x => async_wrap(new PipeReader(x), async_delay)).array;
 
-  // At the moment, we can't append all to the same array, 
-  // because async_wrap returns different type, and we don't
-  // have dynamic interfaces to support inheritance.
+  writefln!"# Arguments: %s"(args_copy);
+  // TODO(baryluk): Add username, hostname, CPU and Memory overview for
+  // referencing.
+
+  // At the moment, we can't append all to the same array, because async_wrap
+  // returns a different type, and we don't have dynamic interfaces to support
+  // inheritance / virtual dispatch.
 
   ExecResult[] exec_prev;
   exec_prev.length = exec_readers.length;
@@ -173,24 +216,27 @@ int main(string[] args) {
   ExecResult[] pipe_next;
   pipe_next.length = pipe_readers.length;
 
+
+
+version (proc_stat_method) {
   const ticks_per_second = TickPerSecond();
 
-  writefln("ticks_per_second: %d", ticks_per_second);
+  writefln!"# ticks_per_second: %d"(ticks_per_second);
 
-//  100 ticks per second. 0.01 per tick.
-//  200ms.
-//  20 ticks.
-
+  // 100 ticks per second. 0.01 per tick.
+  // 200ms.
+  // 20 ticks.
+  // 1 tick error corresponds to 1/20, aka 5% error.
+  // Warn about such things.
   const double ticks_per_interval = interval.total!("nsecs") * 1.0e-9 * ticks_per_second;
   if (ticks_per_interval <= 25) {
-    //writefln!"With interval %s and %.1f ticks/s, expect CPU%% error of +/- %f%%"(interval, 100.0 / ticks_per_second);  // Not detected by ldc or dmd as error. Too few arguments.
-    writefln!"With interval %s and %d ticks/s, expect CPU%% error of +/- %.1f%%"(interval, ticks_per_second, 100.0 / ticks_per_interval);
+    writefln!"# With interval %s and %d ticks/s, expect CPU%% error of ±%.1f%%"(interval, ticks_per_second, 100.0 / ticks_per_interval);
   }
   if (ticks_per_interval <= 5) {
-    writefln!"Too few ticks per interval ( %f ) for reliable and accurate measurements"(ticks_per_interval);
+    writefln!"# Too few ticks per interval ( %f ) for reliable and accurate measurements"(ticks_per_interval);
     return 1;
   }
-
+}
 
 /+
 user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
@@ -221,80 +267,6 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
 
 +/
 
-
-  auto header = (){
-    // Because we want columns to be actually narrow (to save space and parsing, and to fit on screen easily),
-    // but the header things can be wide, spread things like names into multiple rows.
-    if (utc_nice) {
-      writef("%26s %15s %12s", "", "", "");
-    } else {
-      writef("%18s %15s %12s", "", "", "");
-    }
-    foreach (i, ref pid_reader; pid_readers) {
-      if (i % 3 == 2) {
-        writef(" %-26s", pid_reader.name);  // We use 3*8+2 width.
-      }
-    }
-    writeln();
-
-    if (utc_nice) {
-      writef("%26s %15s %12s", "", "", "");
-    } else {
-      writef("%18s %15s %12s", "", "", "");
-    }
-    foreach (i, ref pid_reader; pid_readers) {
-      if (i % 3 == 1) {
-        writef(" |  %-16s", pid_reader.name);
-      }
-    }
-    writeln();
-
-    if (utc_nice) {
-      writef("%26s %15s %12s", "", "", "");
-    } else {
-      writef("%18s %15s %12s", "", "", "");
-    }
-    foreach (i, ref pid_reader; pid_readers) {
-      if (i % 3 == 0) {
-        writef(" %-16s |        |", pid_reader.name);
-      }
-    }
-    writeln();
-
-
-    if (utc_nice) {
-      writef("%26s %15s %12s", "", "", "");
-    } else {
-      writef("%18s %15s %12s", "", "", "");
-    }
-    foreach (i, ref pid_reader; pid_readers) {
-      // writef(" %-8s", "⇩");  // phobos things the arrow is 2-3 characters long, and incorrect calculates the width, making it crawl left.
-      writef(" %-8s", "|");
-    }
-    writeln();
-
-    if (utc_nice) {
-      writef("%26s %15s %12s", "", "", "");
-    } else {
-      writef("%18s %15s %12s", "", "", "");
-    }
-    foreach (i, pid; pids) {
-      writef(" %8d", pid);  // Pids can be wide, often 7 digits, but should be fine.
-    }
-    writeln();
-
-    if (utc_nice) {
-      writef("%26s %15s %12s", "DATETIME UTC", "TIME", "RELTIME");
-    } else {
-      writef("%18s %15s %12s", "SECONDS-FROM-EPOCH", "TIME", "RELTIME");
-    }
-    foreach (i, pid; pids) {
-      writef(" %7s%% %10s", "CPU", "RSS");
-    }
-    writeln();
-  };
-
-  header();
 
   // Read prevs, so we don't start with first row being from the start / boot.
   // This also reads process names, so we can display them in header.
@@ -332,40 +304,166 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
     //static
     string[] header(bool human_friendly) {
       import std.format : format;
-      if (utc_nice) {
-        string h = format!"%26s %15s %12s"("DATETIME UTC", "TIME", "RELTIME");
-        return ["DATETIME UTC|Date and time in ISO 8601 format in UTC timezone",
-                "TIME|Monotonic time, i.e. from system boot time, in seconds",
-                "RELTIME|Monotonic time, from start of the multimonitor monitoring, in seconds"];
-      } else {
-        string h = format!"%18s %15s %12s"("SECONDS-FROM-EPOCH", "TIME", "RELTIME");
-        return ["SECONDS-FROM-EPOCH|Seconds from Unix Epoch (1970-01-01 00:00)",
-                "TIME|Monotonic time, i.e. from system boot time, in seconds",
-                "RELTIME|Monotonic time, from start of the multimonitor monitoring, in seconds"];
+      string[] ret;
+      if (time_mode == TimeMode.absolute || time_mode == TimeMode.all) {
+        if (utc_nice) {
+          ret ~= ["%26s|DATETIME-UTC|Date and time in ISO 8601 format in UTC timezone"];
+        } else {
+          ret ~= ["%17s|UNIX-TIME|Unix time - number of seconds from Unix Epoch (1970-01-01 00:00:00 \"UTC\"), minus leap seconds"];
+        }
       }
+      if (time_mode == TimeMode.boottime || time_mode == TimeMode.all) {
+        ret ~= ["%15s|TIME|Monotonic time, i.e. from system boot time, in seconds"];
+      }
+      if (time_mode == TimeMode.relative || time_mode == TimeMode.all) {
+        ret ~= ["%12s|RELTIME|Monotonic time, from start of the multimonitor monitoring, in seconds"];
+      }
+      return ret;
     }
 
     import std.array : Appender;
 
     //static
-    void format(ref Appender!(char[]) appender, const ref TimestampStat prev, const ref TimestampStat next, bool human_friendly) {
+    final void format(ref Appender!(char[]) appender, const ref TimestampStat prev, const ref TimestampStat next, bool human_friendly) {
       import std.format : formattedWrite;
-      if (utc_nice) {
-        appender.formattedWrite!"%26s %15.6f %12.6f"(
-            toISO_UTC(next.scrape_realtime),
-            next.absolute_time.total!"usecs" * 1.0e-6,
-            next.relative_time.total!"usecs" * 1.0e-6);
-      } else {
-        const time_from_epoch = (next.scrape_realtime - unix_epoch).split!("seconds", "usecs")();
-        appender.formattedWrite!"%11d.%06d %15.6f %12.6f"(
-            time_from_epoch.seconds, time_from_epoch.usecs,
-            next.absolute_time.total!"usecs" * 1.0e-6,
-            next.relative_time.total!"usecs" * 1.0e-6);
+      final switch (time_mode) {
+      case TimeMode.all:
+        if (utc_nice) {
+          appender.formattedWrite!"%26s %15.6f %12.6f"(
+              toISO_UTC(next.scrape_realtime),
+              next.absolute_time.total!"usecs" * 1.0e-6,
+              next.relative_time.total!"usecs" * 1.0e-6);
+        } else {
+          // We don't call this "seconds_from_epoch", or "time_from_epoch",
+          // because of how leap seconds are handled by Unix time.
+          const unix_time = (next.scrape_realtime - unix_epoch).split!("seconds", "usecs")();
+          // For human friendly output we use 10.6, it should work well up to a
+          // year 2286.
+          //
+          // Unix time days ignores leap seconds, and each day has exactly
+          // 86400 seconds.
+          //
+          // Manual pages for `clock_gettime` and `date` simply lie by omission,
+          // saying CLOCK_REALTIME is "seconds from Epoch", which is not true.
+          // Similarly many webpages, tutorials, calculators and time pages,
+          // also use incorrect definitions.
+          //
+          // Even POSIX standards sometimes use "Seconds Since the Epoch",
+          // but this phrase is just a coloquialism, and understood as an
+          // approximation of actual seconds since the Epoch.
+          //
+          // CLOCK_TAI probably is real "seconds from Epoch", but that is not
+          // what everyone uses.
+          appender.formattedWrite!"%10d.%06d %15.6f %12.6f"(
+              unix_time.seconds, unix_time.usecs,
+              next.absolute_time.total!"usecs" * 1.0e-6,
+              next.relative_time.total!"usecs" * 1.0e-6);
+        }
+        return;
+      case TimeMode.absolute:
+        if (utc_nice) {
+          appender.formattedWrite!"%26s"(toISO_UTC(next.scrape_realtime));
+        } else {
+          const unix_time = (next.scrape_realtime - unix_epoch).split!("seconds", "usecs")();
+          appender.formattedWrite!"%10d.%06d"(unix_time.seconds, unix_time.usecs);
+        }
+        return;
+      case TimeMode.boottime:
+        appender.formattedWrite!"%15.6f"(next.absolute_time.total!"usecs" * 1.0e-6);
+        return;
+      case TimeMode.relative:
+         appender.formattedWrite!"%12.6f"(next.relative_time.total!"usecs" * 1.0e-6);
+         return;
       }
+      assert(0);
     }
   }
 
   TimestampFormatter timestamp_formatter;
+
+  auto header = (){
+    import std.algorithm.searching : findSplit;
+
+    // Because we want columns to be actually narrow (to save space and parsing, and to fit on screen easily),
+    // but the header things can be wide, spread things like names into multiple rows.
+    const string[] timestamp_headers = timestamp_formatter.header(human_friendly);
+/++
+    foreach (i, ref pid_reader; pid_readers) {
+      if (i % 3 == 2) {
+        writef(" %-26s", pid_reader.name);  // We use 3*8+2 width.
+      }
+    }
+    writeln();
+
+    foreach (i, ref pid_reader; pid_readers) {
+      if (i % 3 == 1) {
+        writef(" |  %-16s", pid_reader.name);
+      }
+    }
+    writeln();
+
+    foreach (i, ref pid_reader; pid_readers) {
+      if (i % 3 == 0) {
+        writef(" %-16s |        |", pid_reader.name);
+      }
+    }
+    writeln();
+
+
+    foreach (i, ref pid_reader; pid_readers) {
+      // writef(" %-8s", "⇩");  // phobos things the arrow is 2-3 characters long, and incorrect calculates the width, making it crawl left.
+      writef(" %-8s", "|");
+    }
+    writeln();
+
+    foreach (i, pid; pids) {
+      writef(" %8d", pid);  // Pids can be wide, often 7 digits, but should be fine.
+    }
+    writeln();
+++/
+
+    const string[] gpu_headers = gpu_stat_reader ? gpu_stat_reader.header(human_friendly) : [];
+
+    void process_header_data(const string[] headers) {
+      foreach (i, s; headers) {
+        auto ss = s.findSplit("|");
+        writef!" "();
+        writef(ss[0], ss[2].findSplit("|")[0]);
+      }
+    }
+
+
+    foreach (i, s; timestamp_headers) {
+      auto ss = s.findSplit("|");
+      if (i) {
+        writef!" "();
+      } else {
+        // writef!"# "();
+        // TODO: We might need to offset back the first column header,
+        // to make this work.
+      }
+      writef(ss[0], ss[2].findSplit("|")[0]);
+    }
+    process_header_data(gpu_headers);
+    foreach (i, ref pid_reader; pid_readers) {
+      process_header_data(pid_reader.header(human_friendly));
+    }
+    foreach (i, ref exec_reader; exec_readers) {
+      process_header_data(exec_reader.header(human_friendly));
+    }
+    foreach (i, ref exec_async_reader; exec_async_readers) {
+      process_header_data(exec_async_reader.header(human_friendly));
+    }
+    foreach (i, ref pipe_reader; pipe_readers) {
+      process_header_data(pipe_reader.header(human_friendly));
+    }
+
+
+    writeln();
+  };
+
+  header();
+
 
   foreach (scrape_time, scrape_realtime, absolute_time, relative_time, good; time_loop(interval, verbose)) {
     foreach (i, pid_reader; pid_readers) {
@@ -411,9 +509,9 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
         gpu_stat_reader.format(w, gpu_prev, gpu_next, human_friendly);
       }
 
-      foreach (i, pid; pids) {
+      foreach (i, pid_reader; pid_readers) {
         w.put(' ');
-        pid_readers[i].format(w, prev[i], next[i], human_friendly);
+        pid_reader.format(w, prev[i], next[i], human_friendly);
       }
 
       foreach (i, exec_reader; exec_readers) {
@@ -432,14 +530,18 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
       }
 
       writeln(w[]);
+      if (!buffered) {
+        import std.stdio : stdout;
+        stdout.flush();
+      }
     } else {
       // writefln!("jump detected from %d to %d")(prev_j, j);
     }
 
+    gpu_prev = gpu_next;
     foreach (i, pid; pids) {
       prev[i] = next[i];
     }
-    gpu_prev = gpu_next;
     foreach (i, exec_reader; exec_readers) {
       exec_prev[i] = exec_next[i];
     }
@@ -449,8 +551,54 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
     foreach (i, pipe_reader; pipe_readers) {
       pipe_prev[i] = pipe_next[i];
     }
+
+    if (duration != duration.max && relative_time >= duration) {
+      break;
+    }
   }
 
-  //return 0;
-  assert(0);
+  {
+    import std.process : kill, tryWait, wait;
+    import core.sys.posix.signal : SIGTERM, SIGKILL;
+    // Send SIGTERM to all sub processes.
+    foreach (ref pid; pids_to_wait) {
+      // We need to check the process liveness, because it is possible other
+      // thread already encountered, so error or the subprocess ended, and
+      // ProcStatReader already waited on it (to determine if it should have
+      // 0.0% or nan% CPU).
+      auto waited = tryWait(pid);
+      if (!waited.terminated) {
+        kill(pid, SIGTERM);  // Default.
+      }
+    }
+    Thread.sleep(dur!"msecs"(50));
+    bool processes_still_running = false;
+    foreach (ref pid; pids_to_wait) {
+      auto waited = tryWait(pid);
+      if (!waited.terminated) {
+         processes_still_running = true;
+      }
+    }
+    if (processes_still_running) {
+      Thread.sleep(dur!"msecs"(80));
+      foreach (ref pid; pids_to_wait) {
+        kill(pid, SIGKILL);
+      }
+      foreach (ref pid; pids_to_wait) {
+        wait(pid);
+      }
+    }
+  }
+
+  if (gpu_stat_reader) {
+    gpu_stat_reader.stop();
+  }
+  foreach (i, exec_async_reader; exec_async_readers) {
+    exec_async_reader.stop();
+  }
+  foreach (i, pipe_reader; pipe_readers) {
+    pipe_reader.stop();
+  }
+
+  return 0;
 }

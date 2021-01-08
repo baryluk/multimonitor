@@ -42,7 +42,7 @@ set key Left reverse samplen 0.75
 
 
 filenames = system("ls -1 /tmp/valley-mm*.txt")
-filename = "/tmp/valley-mm2.txt"
+filename = "/tmp/valley-mm-zink.txt"
 
 set yrange [0:]
 

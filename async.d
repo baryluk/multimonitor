@@ -12,6 +12,7 @@ import core.time : Duration;
 auto async_wrap(R)(R reader, const Duration async_delay) {
   import core.thread : Thread;
   import core.sync.mutex : Mutex;
+  import core.sync.condition : Condition;
 
   class AsyncWrappedReader {
    private:
@@ -24,24 +25,38 @@ auto async_wrap(R)(R reader, const Duration async_delay) {
     ReadResult last_read_;  // GUARDED_BY(m_)
     bool last_read_consumed_;  // GUARDED_BY(m_)
     bool stop_;  // GUARDED_BY(m_)
+    bool stopped_;  // GUARDED_BY(m_)
+    Condition stopped_cv_;  // GUARDED_BY(m_)
 
     this(ref R reader) {
       reader_ = reader;
       m_ = new Mutex();
+      stopped_cv_ = new Condition(m_);
       thread_ = new Thread(&thread_loop);
     }
 
    public:
     ~this() {
       m_.lock();
-      stop_ = true;
+      assert(stop_);
+      assert(stopped_);
       m_.unlock();
-      thread_.join();
+
+      // thread_.join(/*rethrow=*/false);  // Otherwise it could cause memory allocation.
     }
 
    public:
+    void stop() {
+      m_.lock();
+      stop_ = true;
+      while (!stopped_) {
+        stopped_cv_.wait();
+      }
+      m_.unlock();
+      thread_.join(/*rethrow=*/true);  // Default. Throw now, instead of later.
+    }
+
     ReadResult read() {
-      // scope MutexLock l(&m_);
       m_.lock();
       const ReadResult last_read_copy = last_read_;
       last_read_consumed_ = true;
@@ -68,10 +83,9 @@ auto async_wrap(R)(R reader, const Duration async_delay) {
     }
     }
 
-    import std.array : Appender;
-
-    void format(ref Appender!(char[]) appender, const ref ReadResult prev, const ref ReadResult next, bool human_friendly = true) {
-      return reader_.format(appender, prev, next, human_friendly);
+    // TODO(baryluk): Make it const and/or static, depending on reader_.format attributes.
+    final void format(Writer)(ref Writer writer, const ref ReadResult prev, const ref ReadResult next, bool human_friendly = true) {
+      return reader_.format(writer, prev, next, human_friendly);
     }
 
    private:
@@ -88,6 +102,17 @@ auto async_wrap(R)(R reader, const Duration async_delay) {
         Thread.sleep(async_delay);
         m_.lock();
       }
+      m_.unlock();
+
+      import std.traits : hasMember;
+      static if (hasMember!(typeof(reader_), "stop")) {
+        reader_.stop();
+      }
+
+      m_.lock();
+      stopped_ = true;
+      stopped_cv_.notifyAll();
+      m_.unlock();
     }
   }
 

@@ -1,9 +1,9 @@
 public import core.time : MonoTimeImpl, MonoTime, Duration, dur, ClockType;
 
 //version (Linux) {
-//alias MyMonoTime = MonoTimeImpl!(ClockType.normal);
-alias MyMonoTime = MonoTimeImpl!(ClockType.raw);
-alias CoarseMonoTime = MonoTimeImpl!(ClockType.coarse);
+alias MyMonoTime = MonoTimeImpl!(ClockType.normal);
+//alias MyMonoTime = MonoTimeImpl!(ClockType.raw);
+//alias CoarseMonoTime = MonoTimeImpl!(ClockType.coarse);
 //}
 
 auto time_avg(T)(T t1, T t2) {

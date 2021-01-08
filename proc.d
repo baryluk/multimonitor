@@ -347,8 +347,15 @@ V15: 2.6.30+
 
 
 class PidProcStatReader {
+  import std.process : Pid;
+
  public:
-  this(int pid) {
+  // If pid2 is provided, the reader will periodically do a `pid2.tryWait`,
+  // to determine if the pid finished. This needed, because even if processes
+  // terminated, it will still be in process table, until we wait on it.
+  // So without doing so, we will not detect "dead" process and forever
+  // return "correct" data.
+  this(int pid, Pid pid2 = null) {
     import core.sys.posix.fcntl : open, O_RDONLY;
     import std.conv : to;
     import std.string : toStringz;
@@ -357,6 +364,7 @@ class PidProcStatReader {
     // import core.sys.posix.time : clock_getcpuclockid;
 
     pid_ = pid;
+    pid2_ = pid2_;
     stat_fd_ = open(toStringz("/proc/" ~ to!string(pid) ~ "/stat"), O_RDONLY);
     assert(stat_fd_ >= 0, "Can't open stat file for pid " ~ to!string(pid));
 
@@ -393,6 +401,14 @@ class PidProcStatReader {
     char[4096] buf = void;
     char[1024] buf2 = void;
 
+    // pid2_.processID is non-@nogc. LOL. TODO(baryluk): Fill the bug.
+    //if (pid2_ !is null && pid2_.processID >= 0) {
+
+//    if (pid2_ !is null) {
+//      import std.process: tryWait;
+//      auto pid2_status = pid2_.tryWait();  // it is not noThrow.
+//    }
+
     import core.stdc.errno : errno, ESRCH;
     import core.sys.posix.sys.types : ssize_t, off_t;
 version (SimpleSeekPlusRead) {
@@ -426,8 +442,8 @@ version (SimpleSeekPlusRead) {
 
     import core.sys.posix.time : clock_gettime;
     //enforceErrno(clock_gettime(clockid_, &ts));
-    clock_gettime(clockid_, &ts);  // Temporarily disable enforceErrno;
-
+    const int clock_gettime_ret = clock_gettime(clockid_, &ts);  // Temporarily disable enforceErrno;
+    const int clock_gettime_errno = errno;
     auto t4 = MyMonoTime.currTime();
 
 
@@ -437,11 +453,18 @@ version (SimpleSeekPlusRead) {
     if (schedstat_read_ret == -1 && schedstat_read_errno0 == ESRCH) {
       done_ = true;
     }
+    if (clock_gettime_ret == -1) {
+      done_ = true;
+    }
     if (stat_read_ret < 0 || schedstat_read_ret < 0) {
-       // Don't even set the timestamp, so the division of 0/0 will become nan.
-       return PidProcStat();
+      done_ = true;
+      // Don't even set the timestamp, so the division of 0/0 will become nan.
+      // import std.stdio;
+      // debug writefln("Dead process");
+      return PidProcStat();
     }
 }
+
 
     const string stat_data = cast(const(string))(buf[0 .. stat_read_ret]);
     // 1235 (Web Content) S 0 1 1 0 -1 4194560 832470 238694343 103 1686500 1683 2560 474465 126333 20 0 1 0 5 171896832 3313 18446744073709551615 94719783747584 94719784579661 140736021273296 0 0 0 671173123 4096 1260 0 0 0 17 26 0 0 23 0 0 94719784966352 94719785267440 94719797018624 140736021278282 140736021278330 140736021278330 140736021278691 0
@@ -579,9 +602,13 @@ https://gitlab.com/procps-ng/procps/-/blob/master/top/top.c#L6213
 
   string[] header(bool human_friendly) const {
     import std.format : format;
-    string h = format!"%8s %8s"("CPU%", "RSS");
-    return [format!"CPU%%|CPU percentage for pid %d"(pid_),
-            format!"RSS|RSS memory usage in MiB for pid %d"(pid_)];
+    if (human_friendly) {
+      return [format!"%%9s|CPU%%|CPU percentage for pid %d"(pid_),
+              format!"%%10s|RSS|RSS memory usage in MiB for pid %d"(pid_)];
+    } else {
+      return [format!"%%7s|CPU%%|CPU percentage for pid %d"(pid_),
+              format!"%%6s|RSS|RSS memory usage in MiB for pid %d"(pid_)];
+    }
   }
 
   import std.array : Appender;
@@ -601,9 +628,15 @@ https://gitlab.com/procps-ng/procps/-/blob/master/top/top.c#L6213
     // assert(page_size_kb * 1024 == cast(size_t)(sysconf(_SC_PAGESIZE)));
 
     const wall_clock_time_difference_nsec = (next.timestamp - prev.timestamp).total!"nsecs";
+version (proc_stat_method) {
     const utime_difference_nsec = (next.utime - prev.utime) * 1_000_000_000uL / ticks_per_second;
     const stime_difference_nsec = (next.stime - prev.stime) * 1_000_000_000uL / ticks_per_second;
     const double cpu_time_pct = 100.0 * (utime_difference_nsec + stime_difference_nsec) / wall_clock_time_difference_nsec;
+} else version (posix_cpuclock_method) {
+    const double cpu_time_pct = 100.0 * (next.cpu_clock_time - prev.cpu_clock_time) / wall_clock_time_difference_nsec;
+} else {  // proc_schedstat_method
+    const double cpu_time_pct = 100.0 * (next.schedstat_running_usec - prev.schedstat_running_usec) / wall_clock_time_difference_nsec;
+}
 
     import std.format : formattedWrite;  //, sformat;
     version(timestamp_debugging) {
@@ -624,9 +657,26 @@ https://gitlab.com/procps-ng/procps/-/blob/master/top/top.c#L6213
           (cpu_time_pct >= 0.0 ? cpu_time_pct : double.nan),
           next.rss * page_size_kb / 1024);
     } else {
-      appender.formattedWrite!"%7.2f%% %7dMiB"(
-          (cpu_time_pct >= 0.0 ? cpu_time_pct : double.nan),
-          next.rss * page_size_kb / 1024);
+      const double cpu_time_pct_bypass = (next.pid != 0) ? cpu_time_pct : double.nan;
+      if (next.pid == 0) {
+         import std.stdio;
+         writefln("Process is dead");
+      }
+      if (human_friendly) {
+        // We do display %% and MiB here, because when one has many columns,
+        // having them there makes it easier to know what is what,
+        // without needing to reference header somewhere behind.
+        appender.formattedWrite!"%8.2f%% %7dMiB"(
+            (cpu_time_pct_bypass >= 0.0 ? cpu_time_pct_bypass : double.nan),
+            next.rss * page_size_kb / 1024);
+      } else {
+        // For non-human consumption, we use more narrow columns by default,
+        // they will expand if needed, at the expense of uglier look
+        // (jagged and not aligned). But that is fine.
+        appender.formattedWrite!"%7.2f %6d"(
+            (cpu_time_pct_bypass >= 0.0 ? cpu_time_pct_bypass : double.nan),
+            next.rss * page_size_kb / 1024);
+      }
     }
   }
 
@@ -634,6 +684,7 @@ https://gitlab.com/procps-ng/procps/-/blob/master/top/top.c#L6213
   int stat_fd_;
   int schedstat_fd_;
   int pid_;
+  Pid pid2_;
   const string name_;  // This will be limited to 16 characters by kernel.
   bool done_;
 

@@ -78,10 +78,15 @@ class GpuStatReader {
 
   static
   string[] header(bool human_friendly) {
-    import std.format : format;
-    string h = format!"%8s %11s %11s"("GPU%", "VRAM", "SCLK");
-    return ["GPU%|GPU load percentage", "VRAM|GPU memory usage in MiB",
-            "SCLK|GPU core clock frequency in MHz"];
+    if (human_friendly) {
+      return ["%7s|GPU%|GPU load percentage",
+              "%10s|VRAM|GPU memory usage in MiB",
+              "%9s|SCLK|GPU core clock frequency in MHz"];
+    } else {
+      return ["%6s|GPU%|GPU load percentage",
+              "%7s|VRAM|GPU memory usage in MiB",
+              "%6s|SCLK|GPU core clock frequency in MHz"];
+    }
   }
 
   import std.array : Appender;
@@ -89,7 +94,11 @@ class GpuStatReader {
   static
   void format(ref Appender!(char[]) appender, const ref GpuStat prev, const ref GpuStat next, bool human_friendly = true) {
     import std.format : formattedWrite;
-    appender.formattedWrite!(" %5.1f%% %6.1fMiB %6.1fMHz")(next.gpu_pct, next.vram_kb / 1024.0, next.freq1_Hz / 1.0e6);
+    if (human_friendly) {
+      appender.formattedWrite!(" %5.1f%% %7.1fMiB %6.1fMHz")(next.gpu_pct, next.vram_kb / 1024.0, next.freq1_Hz / 1.0e6);
+    } else {
+      appender.formattedWrite!(" %5.1f %7.1f %6.1f")(next.gpu_pct, next.vram_kb / 1024.0, next.freq1_Hz / 1.0e6);
+    }
   }
 
 
