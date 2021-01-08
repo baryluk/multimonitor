@@ -75,6 +75,11 @@ class PipeReader {
     pipes_ = pipeShell(command, Redirect.stdout, /*env=*/null, Config.retainStderr | Config.suppressConsole);
     command_ = command;  // This is just in case we need to restart the process, or format the header / annotations.
 
+    {
+      import std.stdio : stderr;
+      stderr.writefln!"# Spawned %s for --pipe: %s"(pipes_.pid.processID, command);
+    }
+
     // Set minimum to match "PIPE" header width.
     width_ = 4;
 

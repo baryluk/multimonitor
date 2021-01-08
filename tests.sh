@@ -123,7 +123,7 @@ trap "kill -9 $PIDA $PIDB $PIDC $PIDD $PIDE || true" EXIT
 "${MM}" --interval_msec=100 --duration_sec=10 --sub "exec sleep 2" --sub "exec sleep 20" --pipe "for i in \$(seq 5); do echo \"\$(date +P_%s.%N)\"; sleep 1; done; echo BOOM; sleep 1; exit 1"
 
 # Test dying pipe.
-"${MM}" --interval_msec=100 --duration_sec=10 --pipe "echo A1; sleep 1; echo A2; sleep; echo A3; sleep 1; echo A4; sleep 1; echo BOOM; exit 1"
+"${MM}" --interval_msec=100 --duration_sec=10 --pipe "echo A1; sleep 1; echo A2; sleep 1; echo A3; sleep 1; echo A4; sleep 1; echo BOOM; exit 1"
 
 # Test invalid pipe.
 "${MM}" --interval_msec=100 --duration_sec=10 --sub "exec sleep 20" --pipe "while aklsjdlkj"

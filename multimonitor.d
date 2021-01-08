@@ -86,6 +86,10 @@ int main(string[] args) {
 
   const string[] args_copy = args.idup;
 
+  void opt_handle_sub(string _option, string value) {
+    sub ~= value;
+  }
+
   const bool empty_args = (args.length <= 1);
 
   // Note: Please do not add single letter options! They are harder to read,
@@ -93,7 +97,7 @@ int main(string[] args) {
   auto helpInformation = getopt(
     args,
     std.getopt.config.caseSensitive,
-    "sub",                "Launch a single external command, monitor it just like --pid and finish once it finishes", &sub,
+    "sub",                "Launch a single external command, monitor it just like --pid and finish once it finishes", &opt_handle_sub,
     "pids|pid",           "List of process pids to monitor", &pids,
     "process",            "List of process names to monitor", &process_names,
     "process_map",        "Assign short names to processes, i.e. a=firefox,b=123", &process_map,
@@ -129,6 +133,10 @@ int main(string[] args) {
     "verbose",            "Show timeing loop debug info", &verbose
   );
 
+  //if (sub_.length) {
+  //  sub ~= sub_;
+  //}
+
   if (helpInformation.helpWanted || empty_args) {
     defaultGetoptPrinter(
         "Multimonitor - sample information about system and processes.",
@@ -138,6 +146,10 @@ int main(string[] args) {
     }
     return 1;
   }
+
+  writefln!"# Arguments: %s"(args_copy);
+  // TODO(baryluk): Add username, hostname, CPU and Memory overview for
+  // referencing.
 
   const interval = dur!"msecs"(interval_msec);
   const duration = duration_sec != duration_sec.max ? dur!"seconds"(duration_sec) : Duration.max;
@@ -172,6 +184,7 @@ int main(string[] args) {
     // TODO(baryluk): Possible improvement might be to close
     // stdin too for all spawned sub-processes.
     auto pid = spawnShell(sub_process);
+    stderr.writefln!"# Spawned %s for --sub: %s"(pid.processID, sub_process);
     pids_to_wait ~= pid;
     // pids ~= pid.processID;
   }
@@ -192,10 +205,6 @@ int main(string[] args) {
   ExecReader[] exec_readers = exec.map!(x => new ExecReader(x)).array;
   auto exec_async_readers = exec_async.map!(x => async_wrap(new ExecReader(x), async_delay)).array;
   auto pipe_readers = pipe.map!(x => async_wrap(new PipeReader(x), async_delay)).array;
-
-  writefln!"# Arguments: %s"(args_copy);
-  // TODO(baryluk): Add username, hostname, CPU and Memory overview for
-  // referencing.
 
   // At the moment, we can't append all to the same array, because async_wrap
   // returns a different type, and we don't have dynamic interfaces to support
@@ -221,7 +230,7 @@ int main(string[] args) {
 version (proc_stat_method) {
   const ticks_per_second = TickPerSecond();
 
-  writefln!"# ticks_per_second: %d"(ticks_per_second);
+  stderr.writefln!"# ticks_per_second: %d"(ticks_per_second);
 
   // 100 ticks per second. 0.01 per tick.
   // 200ms.
@@ -230,10 +239,10 @@ version (proc_stat_method) {
   // Warn about such things.
   const double ticks_per_interval = interval.total!("nsecs") * 1.0e-9 * ticks_per_second;
   if (ticks_per_interval <= 25) {
-    writefln!"# With interval %s and %d ticks/s, expect CPU%% error of ±%.1f%%"(interval, ticks_per_second, 100.0 / ticks_per_interval);
+    stderr.writefln!"# With interval %s and %d ticks/s, expect CPU%% error of ±%.1f%%"(interval, ticks_per_second, 100.0 / ticks_per_interval);
   }
   if (ticks_per_interval <= 5) {
-    writefln!"# Too few ticks per interval ( %f ) for reliable and accurate measurements"(ticks_per_interval);
+    stderr.writefln!"# Too few ticks per interval ( %f ) for reliable and accurate measurements"(ticks_per_interval);
     return 1;
   }
 }
@@ -557,6 +566,13 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
     }
   }
 
+  if (gpu_stat_reader) {
+    gpu_stat_reader.stop();
+  }
+  foreach (i, exec_async_reader; exec_async_readers) {
+    exec_async_reader.stop();
+  }
+
   {
     import std.process : kill, tryWait, wait;
     import core.sys.posix.signal : SIGTERM, SIGKILL;
@@ -568,34 +584,32 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
       // 0.0% or nan% CPU).
       auto waited = tryWait(pid);
       if (!waited.terminated) {
+        stderr.writefln!"# Sending SIGTERM to not yet terminated pid %s"(pid.processID);
         kill(pid, SIGTERM);  // Default.
       }
     }
     Thread.sleep(dur!"msecs"(50));
-    bool processes_still_running = false;
+    int processes_still_running = 0;
     foreach (ref pid; pids_to_wait) {
       auto waited = tryWait(pid);
       if (!waited.terminated) {
-         processes_still_running = true;
+         processes_still_running++;
       }
     }
-    if (processes_still_running) {
+    if (processes_still_running > 0) {
+      stderr.writefln!"# Still %d sub-processes running, waiting a bit..."(processes_still_running);
       Thread.sleep(dur!"msecs"(80));
       foreach (ref pid; pids_to_wait) {
+        stderr.writefln!"# Sending SIGKILL to not yet terminated pid %s"(pid.processID);
         kill(pid, SIGKILL);
       }
       foreach (ref pid; pids_to_wait) {
+        stderr.writefln!"# Waiting for pid %s"(pid.processID);
         wait(pid);
       }
     }
   }
 
-  if (gpu_stat_reader) {
-    gpu_stat_reader.stop();
-  }
-  foreach (i, exec_async_reader; exec_async_readers) {
-    exec_async_reader.stop();
-  }
   foreach (i, pipe_reader; pipe_readers) {
     pipe_reader.stop();
   }

@@ -75,11 +75,11 @@ string toISO_UTC(const SysTime t) {
 }
 
 bool mysleep(const MyMonoTime when) {
-  import std.stdio : writefln;
+  import std.stdio : stderr;
 
   const MyMonoTime now = MyMonoTime.currTime();
   if (when <= now) {
-    writefln("oopsie");
+    stderr.writeln("# Execution too slow (--exec subprocess too slow?), retrying loop");
     return false;
   }
 

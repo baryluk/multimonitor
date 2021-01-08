@@ -658,10 +658,6 @@ version (proc_stat_method) {
           next.rss * page_size_kb / 1024);
     } else {
       const double cpu_time_pct_bypass = (next.pid != 0) ? cpu_time_pct : double.nan;
-      if (next.pid == 0) {
-         import std.stdio;
-         writefln("Process is dead");
-      }
       if (human_friendly) {
         // We do display %% and MiB here, because when one has many columns,
         // having them there makes it easier to know what is what,

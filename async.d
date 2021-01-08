@@ -37,10 +37,10 @@ auto async_wrap(R)(R reader, const Duration async_delay) {
 
    public:
     ~this() {
-      m_.lock();
+      //m_.lock();
       assert(stop_);
       assert(stopped_);
-      m_.unlock();
+      //m_.unlock();
 
       // thread_.join(/*rethrow=*/false);  // Otherwise it could cause memory allocation.
     }
