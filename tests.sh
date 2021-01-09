@@ -128,6 +128,11 @@ trap "kill -9 $PIDA $PIDB $PIDC $PIDD $PIDE || true" EXIT
 # Test invalid pipe.
 "${MM}" --interval_msec=100 --duration_sec=10 --sub "exec sleep 20" --pipe "while aklsjdlkj"
 
+# Test command with comma.
+"${MM}" --interval_msec=100 --duration_sec=10 --sub "exec sleep 3; echo a,basdas,casdas"
+
+# Test pure-shell work in sub. One doing a lot of CPU, and pipe writes, one just spinning, and one forking a lot.
+"${MM}" --interval_msec=100 --duration_sec=10 --sub "while :; do echo asd; done > /dev/null" --sub "while :; do :; done" --sub "while :; do /bin/true; done >/dev/null"
 
 # Monitor gpu and sub-process.
 "${MM}" --interval_msec=100 --duration_sec=2 --sub "exec sleep 10" --gpu=min
