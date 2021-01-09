@@ -91,6 +91,7 @@ auto async_wrap(R)(R reader, const Duration async_delay) {
    private:
     void thread_loop() {
       m_.lock();
+      const bool do_delay = (async_delay != Duration.zero);
       // TODO(baryluk): Reuse time.time_loop here?
       while (!stop_) {
         m_.unlock();
@@ -98,9 +99,11 @@ auto async_wrap(R)(R reader, const Duration async_delay) {
         m_.lock();
         last_read_ = new_read;
         last_read_consumed_ = false;
-        m_.unlock();
-        Thread.sleep(async_delay);
-        m_.lock();
+        if (do_delay) {
+          m_.unlock();
+          Thread.sleep(async_delay);
+          m_.lock();
+        }
       }
       m_.unlock();
 

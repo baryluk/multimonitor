@@ -204,7 +204,7 @@ int main(string[] args) {
   // TODO(baryluk): It would be nice to preserve relative order when varoius options are mixed.
   ExecReader[] exec_readers = exec.map!(x => new ExecReader(x)).array;
   auto exec_async_readers = exec_async.map!(x => async_wrap(new ExecReader(x), async_delay)).array;
-  auto pipe_readers = pipe.map!(x => async_wrap(new PipeReader(x), async_delay)).array;
+  auto pipe_readers = pipe.map!(x => async_wrap(new PipeReader(x), Duration.zero)).array;
 
   // At the moment, we can't append all to the same array, because async_wrap
   // returns a different type, and we don't have dynamic interfaces to support
