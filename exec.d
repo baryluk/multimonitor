@@ -32,7 +32,12 @@ class ExecReader {
     import std.process : executeShell, Config;
     import std.string : tr;
     MyMonoTime t1 = MyMonoTime.currTime();
+static if (__traits(compiles, Config.stderrPassThrough)) {
     const output = executeShell(command_, /*env=*/null, Config.suppressConsole | Config.stderrPassThrough);
+} else {
+    // Workaround (ignore issue) for GDC: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=98494
+    const output = executeShell(command_, /*env=*/null, Config.suppressConsole);
+}
     MyMonoTime t2 = MyMonoTime.currTime();
     if (output.status != 0) {
       return ExecResult(time_avg(t1, t2), null);
