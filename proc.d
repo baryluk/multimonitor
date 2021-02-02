@@ -414,13 +414,13 @@ class PidProcStatReader {
 version (SimpleSeekPlusRead) {
     import core.sys.posix.unistd : read, lseek;
     import core.stdc.stdio : SEEK_SET;
-    lseek(fd_, cast(off_t)0, SEEK_SET);
+    lseek(stat_fd_, cast(off_t)0, SEEK_SET);
     auto t1 = MyMonoTime.currTime();
     // TODO(baryluk): What happens exactly if the process dies while we keep open their stat file?
     const ssize_t stat_read_ret = read(stat_fd_, cast(void*)(buf.ptr), cast(size_t)(buf.length));
     const int stat_read_errno0 = errno;
     auto t2 = MyMonoTime.currTime();
-    if (stat_read_ret == -1 &&  stat_read_errno0 == ESRCH) {
+    if (stat_read_ret == -1 && stat_read_errno0 == ESRCH) {
       done_ = true;
     }
     if (stat_read_ret < 0) {
@@ -477,15 +477,12 @@ version (SimpleSeekPlusRead) {
     import std.algorithm.searching : findSplit;
     // import std.string : split;
     import std.algorithm.iteration : splitter;
-    import std.conv : to;
 
     // We don't split by " (" first, because we don't really need pid or name.
     // We can't just skip constant amount of bytes, because the name of the
     // process can change during execution of the process.
     const split0 = stat_data.findSplit(") ");
     assert(split0[0].ptr == stat_data.ptr);
-
-    
 
     // Note, we don't use std.string.split, because it can allocate memory.
     // const string[] splitted = split0[2].split(" ");
@@ -515,7 +512,7 @@ enum bool autodecodeStrings;
     PidProcStat r = void;
 
     // r.timestamp = time_avg(t1, t2);
-    r.timestamp = time_avg(t2, t2);
+    r.timestamp = time_avg(t2, t3);
 
     // r.pid = splitted0[0].to!int;
     // r.pid = split0[0].findSplit(" ")[0].to!int;
@@ -625,7 +622,7 @@ https://gitlab.com/procps-ng/procps/-/blob/master/top/top.c#L6213
       return cast(size_t)(sysconf(_SC_PAGESIZE)) / 1024;
     }();
     assert(page_size_kb > 0);
-    // assert(page_size_kb * 1024 == cast(size_t)(sysconf(_SC_PAGESIZE)));
+    // debug assert(page_size_kb * 1024 == cast(size_t)(sysconf(_SC_PAGESIZE)));
 
     const wall_clock_time_difference_nsec = (next.timestamp - prev.timestamp).total!"nsecs";
 version (proc_stat_method) {
@@ -677,14 +674,14 @@ version (proc_stat_method) {
   }
 
  private:
-  int stat_fd_;
-  int schedstat_fd_;
-  int pid_;
+  const int stat_fd_;
+  const int schedstat_fd_;
+  const int pid_;
   Pid pid2_;
   const string name_;  // This will be limited to 16 characters by kernel.
   bool done_;
 
-  clockid_t clockid_;
+  /*const*/ clockid_t clockid_;
 }
 
 // Return pids of processes matching given name.
