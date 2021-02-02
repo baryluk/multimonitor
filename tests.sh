@@ -76,6 +76,13 @@ trap "kill -9 $PIDA $PIDB $PIDC $PIDD $PIDE || true" EXIT
 "${MM}" --gpu=min --interval_msec=1000  --duration_sec=3
 "${MM}" --gpu=min --interval_msec=10  --duration_sec=2
 "${MM}" --duration_sec=2 --gpu=min
+"${MM}" --duration_sec=2 --gpu=none
+
+# IO stuff.
+"${MM}" --duration_sec=2 --io=min
+"${MM}" --duration_sec=2 --io=max
+"${MM}" --duration_sec=2 --io=none
+
 
 # One sync.
 "${MM}" --interval_msec=100 --duration_sec=2 --exec "date +S1_%s.%N"

@@ -9,13 +9,13 @@ import types;
 import util;
 import time;
 import hwmon;
-import gpu;
+import gpu : GpuStuff, GpuStatReader, GpuStat;
+import io : IoStuff, VmStatReader, VmStat;
 import cpu;
 import proc;
 import exec;
 
 import async : async_wrap;
-
 
 
 
@@ -59,11 +59,10 @@ int main(string[] args) {
   bool vm;
   bool interrupts;
   bool ctx;
-  bool io;
+  IoStuff io;
   bool net;
   string[] mangohud_fps;
 
-  enum GpuStuff { none, min, max, }
   GpuStuff gpu_stuff;
 
   string[] exec;
@@ -108,7 +107,7 @@ int main(string[] args) {
     "vm",                 "System-wide virtual memory subsystem details", &vm,
     "interrupts",         "System-wide interrupts details", &interrupts,
     "ctx",                "System-wide context switching metrics", &ctx,
-    "io",                 "System-wide IO details", &io,
+    "io",                 "System-wide IO details. Available: none, min, max", &io,
     "net",                "System-wide networking metrics", &net,
     "gpu",                "System-wide GPU stats. Available: none, min, max", &gpu_stuff,
     "mangohud_fps",       "Gather FPS information for given processes using MangoHud RPC", &mangohud_fps,
@@ -157,6 +156,9 @@ int main(string[] args) {
 
   auto amdgpu_hwmon_dir = gpu_stuff != GpuStuff.none ? searchHWMON("amdgpu") : null;
   auto gpu_stat_reader = amdgpu_hwmon_dir !is null ? async_wrap(new GpuStatReader(amdgpu_hwmon_dir), async_delay) : null;
+
+  // For basic I/O stats.
+  auto vmstat_reader = io != IoStuff.none ? new VmStatReader(io) : null;
 
   foreach (process_name; process_names) {
     bool found = false;
@@ -296,6 +298,7 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
   const unix_epoch = UnixEpoch();
 
   GpuStat gpu_prev, gpu_next;
+  VmStat vmstat_prev, vmstat_next;
 
   import std.array : Appender, appender;
   // Appender!string w;
@@ -433,6 +436,8 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
 
     const string[] gpu_headers = gpu_stat_reader ? gpu_stat_reader.header(human_friendly) : [];
 
+    const string[] vmstat_headers = vmstat_reader ? vmstat_reader.header(human_friendly) : [];
+
     void process_header_data(const string[] headers) {
       foreach (i, s; headers) {
         auto ss = s.findSplit("|");
@@ -440,7 +445,6 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
         writef(ss[0], ss[2].findSplit("|")[0]);
       }
     }
-
 
     foreach (i, s; timestamp_headers) {
       auto ss = s.findSplit("|");
@@ -454,6 +458,7 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
       writef(ss[0], ss[2].findSplit("|")[0]);
     }
     process_header_data(gpu_headers);
+    process_header_data(vmstat_headers);
     foreach (i, ref pid_reader; pid_readers) {
       process_header_data(pid_reader.header(human_friendly));
     }
@@ -466,7 +471,6 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
     foreach (i, ref pipe_reader; pipe_readers) {
       process_header_data(pipe_reader.header(human_friendly));
     }
-
 
     writeln();
   };
@@ -494,6 +498,10 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
       gpu_next = gpu_stat_reader.read();
     }
 
+    if (vmstat_reader) {
+      vmstat_next = vmstat_reader.read();
+    }
+
     if (good) {  // If there was a large jump in expected time (i.e. we got some signal, system was susspended, or we got SIGSTOP, or tracing), don't compute differences.
       // TODO: We can still show the RSS tho.
 
@@ -516,6 +524,11 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
       if (gpu_stat_reader) {
         w.put(' ');
         gpu_stat_reader.format(w, gpu_prev, gpu_next, human_friendly);
+      }
+
+      if (vmstat_reader) {
+        w.put(' ');
+        vmstat_reader.format(w, vmstat_prev, vmstat_next, human_friendly);
       }
 
       foreach (i, pid_reader; pid_readers) {
@@ -548,6 +561,7 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
     }
 
     gpu_prev = gpu_next;
+    vmstat_prev = vmstat_next;
     foreach (i, pid; pids) {
       prev[i] = next[i];
     }

@@ -22,6 +22,13 @@ struct GpuStat {
   float VDD_mV;
 }
 
+// How much details / information to read.
+enum GpuStuff {
+  none,
+  min,
+  max,
+}
+
 class GpuStatReader {
   this(string hwmon_dir) {
     import core.sys.posix.fcntl : open, O_RDONLY;

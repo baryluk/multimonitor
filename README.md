@@ -52,7 +52,7 @@ Multimonitor - sample information about system and processes.
                 --sched CPU scheduler details
                    --vm Virtual memory subsystem
            --interrupts Interrupts details
-                   --io System-wide IO details
+                   --io System-wide IO details. Available: none, min, max
                   --net System-wide networking metrics
                   --gpu Gather GPU stats. Available: none, min, max
          --mangohud_fps Gather FPS information for given processes using MangoHud RPC
@@ -410,6 +410,34 @@ $ multimonitor --utc_nice --gpu=min
 loads, memory clocks, temperature, and such.
 
 GPU stats will always be displayed before any of monitored processes (specified
+via `--pids`, `--pid`, `--process` or `--sub`), as well plugins (`--pipe`,
+`--exec*`).
+
+### `--io`
+
+Shows system-wide block device IO.
+
+```
+$ multimonitor --utc_nice --io=min
+              DATETIME-UTC            TIME      RELTIME      RDkB/s      WRkB/s
+2021-02-02T05:43:48.568163   875927.542727     0.200118  164384KB/s       0KB/s
+2021-02-02T05:43:48.768168   875927.742620     0.400011  165211KB/s       0KB/s
+2021-02-02T05:43:48.968174   875927.942660     0.600052  163808KB/s       0KB/s
+2021-02-02T05:43:49.168179   875928.142829     0.800221  164340KB/s       0KB/s
+```
+
+`--io=max` additionally provides information about swap bandwidth.
+
+```
+$ multimonitor --utc_nice --io=max
+              DATETIME-UTC            TIME      RELTIME      RDkB/s      WRkB/s SWAPRDkB/s SWAPWRkB/s
+2021-02-02T05:43:45.804091   875924.776632     0.200065  164425KB/s       0KB/s      0KB/s      0KB/s
+2021-02-02T05:43:46.004096   875924.976592     0.400025  163875KB/s       0KB/s      0KB/s      0KB/s
+2021-02-02T05:43:46.204101   875925.176618     0.600051  165097KB/s       0KB/s      0KB/s      0KB/s
+2021-02-02T05:43:46.404107   875925.376602     0.800034  164493KB/s       0KB/s      0KB/s      0KB/s
+```
+
+IO stats will always be displayed before any of monitored processes (specified
 via `--pids`, `--pid`, `--process` or `--sub`), as well plugins (`--pipe`,
 `--exec*`).
 
