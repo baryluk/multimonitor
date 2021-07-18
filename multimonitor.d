@@ -9,6 +9,7 @@ import types;
 import util;
 import time;
 import hwmon;
+import loadavg : LoadAvgStuff, LoadAvgReader, LoadAvgStat;
 import gpu : GpuStuff, GpuStatReader, GpuStat;
 import io : IoStuff, VmStatReader, VmStat;
 import net : NetStuff, NetStatReader, NetStat;
@@ -64,6 +65,7 @@ int main(string[] args) {
   NetStuff net_stuff;
   string[] mangohud_fps;
 
+  LoadAvgStuff loadavg_stuff;
   GpuStuff gpu_stuff;
 
   string[] exec;
@@ -102,7 +104,7 @@ int main(string[] args) {
     "process",            "List of process names to monitor", &process_names,
     "process_map",        "Assign short names to processes, i.e. a=firefox,b=123", &process_map,
     "cpu",                "Overall CPU stats, i.e. load, average and max frequency", &cpu,
-    "load",               "System-wide load average", &load,
+    "loadavg",            "System-wide load average. Avaiable: none, min (1-min avg), med (+5 min avg), max (+runnables and tasks count, and forks per second)", &loadavg_stuff,
     "cpu_temp",           "CPU temperature", &cpu_temp,
     "sched",              "System-wide CPU scheduler details", &sched,
     "vm",                 "System-wide virtual memory subsystem details", &vm,
@@ -154,6 +156,8 @@ int main(string[] args) {
   const interval = dur!"msecs"(interval_msec);
   const duration = duration_sec != duration_sec.max ? dur!"seconds"(duration_sec) : Duration.max;
   const async_delay = dur!"msecs"(async_delay_msec);
+
+  auto loadavg_reader = loadavg_stuff != LoadAvgStuff.none ? new LoadAvgReader(loadavg_stuff) : null;
 
   auto amdgpu_hwmon_dir = gpu_stuff != GpuStuff.none ? searchHWMON("amdgpu") : null;
   auto gpu_stat_reader = amdgpu_hwmon_dir !is null ? async_wrap(new GpuStatReader(amdgpu_hwmon_dir, gpu_stuff), async_delay) : null;
@@ -300,6 +304,7 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
 
   const unix_epoch = UnixEpoch();
 
+  LoadAvgStat loadavg_prev, loadavg_next;
   GpuStat gpu_prev, gpu_next;
   VmStat vmstat_prev, vmstat_next;
   NetStat netstat_prev, netstat_next;
@@ -438,6 +443,8 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
     writeln();
 ++/
 
+    const string[] loadavg_headers = loadavg_reader ? loadavg_reader.header(human_friendly) : [];
+
     const string[] gpu_headers = gpu_stat_reader ? gpu_stat_reader.header(human_friendly) : [];
 
     const string[] vmstat_headers = vmstat_reader ? vmstat_reader.header(human_friendly) : [];
@@ -464,6 +471,7 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
       writef(ss[0], ss[2].findSplit("|")[0]);
     }
     process_header_data(gpu_headers);
+    process_header_data(loadavg_headers);
     process_header_data(vmstat_headers);
     process_header_data(netstat_headers);
     foreach (i, ref pid_reader; pid_readers) {
@@ -510,6 +518,10 @@ mainloop:
     }
     // writefln("%20s usec: %s usec", (scrape_time - start_time).total!"usecs", (next[0].timestamp - prev[0].timestamp).total!"usecs");
 
+    if (loadavg_reader) {
+      loadavg_next = loadavg_reader.read();
+    }
+
     if (gpu_stat_reader) {
       gpu_next = gpu_stat_reader.read();
     }
@@ -539,6 +551,11 @@ mainloop:
         time_next.absolute_time = absolute_time;
         time_next.relative_time = relative_time;
         timestamp_formatter.format(w, time_prev, time_next, human_friendly);
+      }
+
+      if (loadavg_reader) {
+        w.put(' ');
+        loadavg_reader.format(w, loadavg_prev, loadavg_next, human_friendly);
       }
 
       if (gpu_stat_reader) {
@@ -585,6 +602,7 @@ mainloop:
       // writefln!("jump detected from %d to %d")(prev_j, j);
     }
 
+    loadavg_prev = loadavg_next;
     gpu_prev = gpu_next;
     vmstat_prev = vmstat_next;
     netstat_prev = netstat_next;
