@@ -18,7 +18,7 @@ stress-ng --cpu 1 --timeout 3600s &
 PIDD=$!
 trap "kill -9 $PIDA $PIDB $PIDC $PIDD || true" EXIT
 sleep 8  # Sometimes if the system is loaded, it can take some time for the stress-ng-cpu to initialize.
-PIDE=$(pidof stress-ng-cpu)
+PIDE=$(pidof 'stress-ng-cpu [run]')
 trap "kill -9 $PIDA $PIDB $PIDC $PIDD $PIDE || true" EXIT
 
 # TODO(baryluk): Spawn some processes with known CPU and Memory behaviour.
@@ -32,6 +32,8 @@ trap "kill -9 $PIDA $PIDB $PIDC $PIDD $PIDE || true" EXIT
   --exec_async "date '+A_%s.%N'" \
   --async_delay_msec=500 \
   --pid $PIDA --pid $PIDE --pids "$PIDA,$PIDB,$PIDC" \
+  --loadavg=max \
+  --vm \
   --io=max \
   --net=max \
   --gpu=max
@@ -51,10 +53,10 @@ trap "kill -9 $PIDA $PIDB $PIDC $PIDD $PIDE || true" EXIT
 # Monitor process by pid.
 "${MM}" --interval_msec=1000  --duration_sec=2 --pid $PIDE
 # Monitor process by name.
-"${MM}" --interval_msec=1000  --duration_sec=2 --process "stress-ng-cpu"
+"${MM}" --interval_msec=1000  --duration_sec=2 --process "stress-ng-cpu [run]"
 
 # Monitor same process one by pid, and one by name.
-"${MM}" --interval_msec=1000  --duration_sec=2 --pid $PIDA --process "stress-ng-cpu"
+"${MM}" --interval_msec=1000  --duration_sec=2 --pid $PIDA --process "stress-ng-cpu [run]"
 
 # Monitor same process many times, in multiple ways.
 "${MM}" --interval_msec=1000  --duration_sec=2 --pids $PIDA,$PIDB,$PIDA,$PIDD,$PIDE --pid $PIDA --pid $PIDA --pid $PIDE
@@ -74,6 +76,12 @@ trap "kill -9 $PIDA $PIDB $PIDC $PIDD $PIDE || true" EXIT
 # No monitor. Just timestamps, until duration.
 "${MM}" --interval_msec=1000  --duration_sec=3
 "${MM}" --interval_msec=10    --duration_sec=2
+
+# Loadavg stuff.
+"${MM}" --duration_sec=2 --loadavg=min
+"${MM}" --duration_sec=2 --loadavg=med
+"${MM}" --duration_sec=2 --loadavg=max
+"${MM}" --duration_sec=2 --loadavg=none
 
 # GPU stuff.
 "${MM}" --gpu=min --interval_msec=1000  --duration_sec=3

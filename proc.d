@@ -768,8 +768,27 @@ int[] find_process_by_name(string name, string username = null) {
       int pid = filename[6..$].to!int;
       // TODO(baryluk): Stat for the file first before throwwing FileException.
       const string comm = readfile_string(filename ~ "/comm");
+      // There is a new line in comm, but readfile_string strips it.
       if (comm == name) {
         ret ~= pid;
+      } else {
+          const string cmdline0 = readfile_string(filename ~ "/cmdline");
+          if (cmdline0.length >= 1) {
+            // Strip right most NUL bytes.
+            size_t j = cmdline0.length - 1;
+            while (j > 0) {
+              if (cmdline0[j] != '\0') {
+                break;
+              }
+              j--;
+            }
+            const string cmdline = cmdline0[0 .. j + 1];
+            // (If process is zombie, cmdline is an empty file).
+            // There is usually a NUL byte at the end of cmdline file.
+            if (cmdline == name) {
+              ret ~= pid;
+            }
+          }
       }
     } catch (FileException ce) {
       // The file we tried to open (using readfile_string) is gone.
