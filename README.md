@@ -48,7 +48,11 @@ Multimonitor - sample information about system and processes.
                  --pids List of process pids to monitor
               --process List of process names to monitor
           --process_map Assign short names to processes, i.e. a=firefox,b=123
-                 --temp CPU temperature
+                  --cpu Overall CPU stats, i.e. load, average and max frequency
+              --loadavg System-wide load average. Avaiable: none, min (1-min avg),
+                        med (+5 min avg), max (+runnables and tasks count,
+                        and forks per second)
+             --cpu_temp CPU temperature
                 --sched CPU scheduler details
                    --vm Virtual memory subsystem
            --interrupts Interrupts details
@@ -168,7 +172,8 @@ Here is a general ordering:
 
   * Timestamps (influenced by `--utc_nice` and `--time`)
   * `--cpu`
-  * `--temp`
+  * `--loadvg`
+  * `--cpu_temp`
   * `--mem`
   * `--gpu`
   * `--sched`
