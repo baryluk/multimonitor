@@ -37,7 +37,7 @@ template qto(T) {
     import std.range : front, popFront, empty;
 
     // import std.stdio;
-    // debug writefln("%s", s);
+    // debug writefln("qto '%s'", s);
 
     auto source = s;
     size_t count = 0;
@@ -75,6 +75,73 @@ unittest {
 
   assert("-654".qto!int == -654);
   assert("-654".qto!long == -654);
+}
+
+// Like qto, but for floating point values. No scientific notation supported.
+template qtof(T) {
+  // TODO(baryluk): Would be nice to make this immutable or in.
+  T qtof(S)(const S s) @nogc nothrow pure {
+    import std.range : front, popFront, empty;
+
+    // import std.stdio;
+    // debug writefln("qtof %s", s);
+
+    auto source = s;
+    size_t count = 0;
+    int i = 0;
+    uint c = s[i];
+    i++;
+    T neg = cast(T)(1.0f);
+    if (c == '-') {
+       neg = cast(T)(-1.0f);
+       i++;
+       c = s[i];
+    }
+    c -= '0';
+    assert(0 <= c && c <= 9);
+    T integral_part = cast(T)(c);
+    while (i < s.length) {
+      if (source[i] == '.') {
+          i++;
+          break;
+      }
+      c = cast(typeof(c))(source[i] - '0');
+      assert(0 <= c && c <= 9);
+      integral_part = cast(T)(integral_part * cast(T)(10.0) + cast(T)(c));
+      i++;
+    }
+    // int j = 0;
+    T decimal_part = cast(T)(0.0);
+    T decimal_multiplier = cast(T)(1.0);
+    while (i < s.length) {
+      c = cast(typeof(c))(source[i] - '0');
+      assert(0 <= c && c <= 9);
+      decimal_part = cast(T)(decimal_part * cast(T)(10.0) + cast(T)(c));
+      decimal_multiplier *= cast(T)(10.0);
+      i++;
+    }
+
+    // debug writefln("qtof2 '%s' '%s'", s, neg * (integral_part + decimal_part / decimal_multiplier));
+    return neg * (integral_part + decimal_part / decimal_multiplier);
+  }
+}
+unittest {
+  assert("1".qtof!float == 1);
+  assert("0".qtof!float == 0);
+  assert("-1".qtof!float == -1);
+  assert("-0".qtof!float == 0);
+
+  assert("6.54".qtof!float == 6.54);
+  assert("6.54".qtof!double == 6.54);
+  assert("006.54".qtof!float == 6.54);
+  assert("006.54".qtof!double == 6.54);
+  assert("6.5400".qtof!float == 6.54);
+  assert("6.5400".qtof!double == 6.54);
+  assert("6.0054".qtof!float == 6.0054);
+  assert("6.0054".qtof!double == 6.0054);
+
+  assert("-6.54".qtof!float == -6.54);
+  assert("-6.54".qtof!double == -6.54);
 }
 
 auto popy(R)(ref R r) {
