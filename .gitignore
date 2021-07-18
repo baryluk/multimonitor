@@ -1,0 +1,12 @@
+.fuse*
+*.o
+*_dmd
+*_ldc
+*_ldc2
+*_gdc
+multimonitor
+other/
+
+AppDir/
+appimage-builder-cache/
+*.AppImage

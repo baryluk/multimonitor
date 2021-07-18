@@ -1,0 +1,67 @@
+# appimage-builder recipe see https://appimage-builder.readthedocs.io for details
+version: 1
+AppDir:
+  path: ./AppDir
+  app_info:
+    id: xyz.functor.multimonitor
+    name: multimonitor
+    #icon: 'desktop-base/scalable/emblems/emblem-debian.svg'
+    icon: 'multimonitor'
+    version: '2021-05-07'
+    exec: usr/bin/multimonitor
+    exec_args: $@
+  apt:
+    arch: amd64
+    allow_unauthenticated: true
+    sources:
+    - sourceline: deb http://deb.debian.org/debian/ sid main non-free contrib
+    include:
+    - libphobos2-ldc-shared94
+    exclude: []
+  files:
+    include:
+    - /usr/lib/x86_64-linux-gnu/libpthread-2.31.so
+    - /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
+    - /usr/lib/x86_64-linux-gnu/libc-2.31.so
+    - /usr/lib/x86_64-linux-gnu/libm-2.31.so
+    - /usr/lib/x86_64-linux-gnu/libdl-2.31.so
+    - /usr/lib/x86_64-linux-gnu/libz.so.1.2.11
+    - /lib/x86_64-linux-gnu/libphobos2-ldc-shared.so.94
+    - /lib/x86_64-linux-gnu/libdruntime-ldc-shared.so.94
+    - /usr/lib/x86_64-linux-gnu/libphobos2-ldc-shared.so.94
+    - /usr/lib/x86_64-linux-gnu/libdruntime-ldc-shared.so.94
+    exclude:
+    - usr/share/man
+    - usr/share/doc/*/README.*
+    - usr/share/doc/*/changelog.*
+    - usr/share/doc/*/NEWS.*
+    - usr/share/doc/*/TODO.*
+    - usr/share/doc/*/FAQ*
+    - usr/share/lintian
+    - usr/lib/x86_64-linux-gnu/libLLVM-11.so.1  # This is not needed at runtime, and is huge (~80MB), adds 25MB of extra size to AppImage.
+    - usr/lib/x86_64-linux-gnu/libldc-jit.so.2.0.94
+  test:
+    fedora:
+      image: appimagecrafters/tests-env:fedora-30
+      command: ./AppRun
+      use_host_x: true
+    debian:
+      image: appimagecrafters/tests-env:debian-stable
+      command: ./AppRun
+      use_host_x: true
+    arch:
+      image: appimagecrafters/tests-env:archlinux-latest
+      command: ./AppRun
+      use_host_x: true
+    centos:
+      image: appimagecrafters/tests-env:centos-7
+      command: ./AppRun
+      use_host_x: true
+    ubuntu:
+      image: appimagecrafters/tests-env:ubuntu-xenial
+      command: ./AppRun
+      use_host_x: true
+AppImage:
+  arch: x86_64
+  update-information: guess
+  sign-key: None

@@ -17,7 +17,7 @@ trap "kill -9 $PIDA $PIDB $PIDC || true" EXIT
 stress-ng --cpu 1 --timeout 3600s &
 PIDD=$!
 trap "kill -9 $PIDA $PIDB $PIDC $PIDD || true" EXIT
-sleep 5
+sleep 8  # Sometimes if the system is loaded, it can take some time for the stress-ng-cpu to initialize.
 PIDE=$(pidof stress-ng-cpu)
 trap "kill -9 $PIDA $PIDB $PIDC $PIDD $PIDE || true" EXIT
 
@@ -31,7 +31,10 @@ trap "kill -9 $PIDA $PIDB $PIDC $PIDD $PIDE || true" EXIT
   --exec "date '+S_%s.%N'" \
   --exec_async "date '+A_%s.%N'" \
   --async_delay_msec=500 \
-  --pid $PIDA --pid $PIDE --pids "$PIDA,$PIDB,$PIDC"
+  --pid $PIDA --pid $PIDE --pids "$PIDA,$PIDB,$PIDC" \
+  --io=max \
+  --net=max \
+  --gpu=max
 
 
 # Help tests.
@@ -76,12 +79,31 @@ trap "kill -9 $PIDA $PIDB $PIDC $PIDD $PIDE || true" EXIT
 "${MM}" --gpu=min --interval_msec=1000  --duration_sec=3
 "${MM}" --gpu=min --interval_msec=10  --duration_sec=2
 "${MM}" --duration_sec=2 --gpu=min
+"${MM}" --duration_sec=2 --gpu=med
+"${MM}" --duration_sec=2 --gpu=max
 "${MM}" --duration_sec=2 --gpu=none
+"${MM}" --duration_sec=2 --gpu=min --human_friendly=false
+"${MM}" --duration_sec=2 --gpu=med --human_friendly=false
+"${MM}" --duration_sec=2 --gpu=max --human_friendly=false
+"${MM}" --duration_sec=2 --gpu=none --human_friendly=false
 
 # IO stuff.
 "${MM}" --duration_sec=2 --io=min
 "${MM}" --duration_sec=2 --io=max
 "${MM}" --duration_sec=2 --io=none
+"${MM}" --duration_sec=2 --io=min --human_friendly=false
+"${MM}" --duration_sec=2 --io=max --human_friendly=false
+"${MM}" --duration_sec=2 --io=none --human_friendly=false
+
+# Net stuff.
+"${MM}" --duration_sec=2 --net=min
+"${MM}" --duration_sec=2 --net=med
+"${MM}" --duration_sec=2 --net=max
+"${MM}" --duration_sec=2 --net=none
+"${MM}" --duration_sec=2 --net=min --human_friendly=false
+"${MM}" --duration_sec=2 --net=med --human_friendly=false
+"${MM}" --duration_sec=2 --net=max --human_friendly=false
+"${MM}" --duration_sec=2 --net=none --human_friendly=false
 
 
 # One sync.
@@ -107,9 +129,18 @@ trap "kill -9 $PIDA $PIDB $PIDC $PIDD $PIDE || true" EXIT
 "${MM}" --interval_msec=100 --duration_sec=2 --sub "exec sleep 10"
 # Sub process, ending before end of duration.
 "${MM}" --interval_msec=100 --duration_sec=10 --sub "exec sleep 2"
+"${MM}" --interval_msec=100 --duration_sec=10 --sub "exec sleep 2" --exit_when_dead=false
+
+# Sub process, ending prematurely, and exiting then.
+"${MM}" --interval_msec=100 --duration_sec=10 --sub "exec sleep 2" --exit_when_dead=true
+"${MM}" --interval_msec=100 --duration_sec=10 --sub "exec sleep 2" --exit_when_dead
+
 
 # Two sub-processes, one ending before duration, one ending after duration.
 "${MM}" --interval_msec=100 --duration_sec=10 --sub "exec sleep 2" --sub "exec sleep 20"
+
+# Two sub-processes, one ending before duration, one ending after duration. Terminate as soon as any process finishes (dead or zombie).
+"${MM}" --interval_msec=100 --duration_sec=10 --sub "exec sleep 2" --sub "exec sleep 20" --exit_when_dead=true
 
 # Pipe that starts producing with a delay
 "${MM}" --interval_msec=100 --duration_sec=10 --sub "exec sleep 2" --sub "exec sleep 20" --pipe "while sleep 1; do echo \"\$(date +P_%s.%N)\"; done"
@@ -188,6 +219,30 @@ wait $PIDE || true
 sleep 3600 &
 PIDA=$!
 "${MM}" --interval_msec=500 --duration_sec=10 --pid $PIDA &
+MMPID=$!
+echo Sleeping
+sleep 1
+echo Sleeping
+sleep 1
+echo Sleeping
+sleep 1
+kill $PIDA
+sleep 1
+kill -9 $PIDA || true
+echo "Waiting for $PIDA"
+wait $PIDA || true
+echo Sleeping
+sleep 1
+echo Sleeping
+sleep 1
+#kill $MMPID
+echo "Waiting for $MMPID"
+wait $MMPID || true
+
+# Monitor by pid, kill monitored process before end of duration. mm should also finish due to --exit_when_dead. Then kill mm just for a good measure.
+sleep 3600 &
+PIDA=$!
+"${MM}" --interval_msec=500 --duration_sec=10 --exit_when_dead=true --pid $PIDA &
 MMPID=$!
 echo Sleeping
 sleep 1

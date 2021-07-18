@@ -2,6 +2,18 @@ import types;
 import util;
 import time;
 
+//version = timestamp_debugging;
+
+version = proc_stat_method;
+//version = posix_cpuclock_method;
+//version = proc_schedstat_method;  // For some reason it underreports (i.e. ~70% vs ~120%), and is quite slow for highly multithreaded programs. I.e. for Unigine Heaven, two processes reading would make it too slow to process.
+
+version(timestamp_debugging) {
+  version = posix_cpuclock_method;
+  version = proc_schedstat_method;
+}
+
+
 /*
 user@debian:~/vps1/home/baryluk/multimonitor$ ps aux
 USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
@@ -173,13 +185,16 @@ version(timestamp_debugging) {
   MyMonoTime t4;
 }
 
+version (posix_cpuclock_method) {
   // From POSIX process CPU clock.
   timespec cpu_clock_time;
+}
 
-
+version (proc_schedstat_method) {
   // From /proc/<pid>/schedstat
   uint64 schedstat_running_usec;
   uint64 schedstat_waiting_usec;
+}
 
   // From getrusage
 /++
@@ -345,6 +360,24 @@ V15: 2.6.30+
 
 ++/
 
+version (proc_stat_method) {
+import time : TickPerSecond;
+__gshared typeof(TickPerSecond()) ticks_per_second;
+shared static this() {
+  import std.stdio : writefln;
+  ticks_per_second = TickPerSecond();
+  writefln("# ProcStat Initializing ticks_per_second = %d", ticks_per_second);
+}
+}
+
+__gshared size_t page_size_kb;
+shared static this() {
+  import std.stdio : writefln;
+  import core.sys.posix.unistd : sysconf, _SC_PAGESIZE;
+  page_size_kb = cast(size_t)(sysconf(_SC_PAGESIZE)) / 1024;
+  writefln("# ProcStat Initializing page_size_kb = %d", page_size_kb);
+}
+
 
 class PidProcStatReader {
   import std.process : Pid;
@@ -386,20 +419,28 @@ class PidProcStatReader {
     name_ = split1[0].idup;
     done_ = false;
 
-    enforceRet(clock_getcpuclockid(cast(pid_t)(pid_), &clockid_));
+    version (posix_cpuclock_method) {
+      enforceRet(clock_getcpuclockid(cast(pid_t)(pid_), &clockid_));
+    }
 
+    version (proc_schedstat_method) {
     schedstat_fd_ = open(toStringz("/proc/" ~ to!string(pid) ~ "/schedstat"), O_RDONLY);
     assert(schedstat_fd_ >= 0, "Can't open schedstat file for pid " ~ to!string(pid));
+    }
   }
   ~this() {
     import core.sys.posix.unistd : close;
     close(stat_fd_);
+    version (proc_schedstat_method) {
     close(schedstat_fd_);
+    }
   }
 
   PidProcStat read() @nogc nothrow {
     char[4096] buf = void;
+    version (proc_schedstat_method) {
     char[1024] buf2 = void;
+    }
 
     // pid2_.processID is non-@nogc. LOL. TODO(baryluk): Fill the bug.
     //if (pid2_ !is null && pid2_.processID >= 0) {
@@ -436,32 +477,45 @@ version (SimpleSeekPlusRead) {
     const int stat_read_errno0 = errno;
     auto t2 = MyMonoTime.currTime();
 
+    version (proc_schedstat_method) {
     const ssize_t schedstat_read_ret = pread(schedstat_fd_, cast(void*)(buf2.ptr), cast(size_t)(buf2.length), cast(off_t)(0));
     const int schedstat_read_errno0 = errno;
     auto t3 = MyMonoTime.currTime();
+    }
 
-    import core.sys.posix.time : clock_gettime;
-    //enforceErrno(clock_gettime(clockid_, &ts));
-    const int clock_gettime_ret = clock_gettime(clockid_, &ts);  // Temporarily disable enforceErrno;
-    const int clock_gettime_errno = errno;
-    auto t4 = MyMonoTime.currTime();
-
+    version (posix_cpuclock_method) {
+      import core.sys.posix.time : clock_gettime;
+      //enforceErrno(clock_gettime(clockid_, &ts));
+      const int clock_gettime_ret = clock_gettime(clockid_, &ts);  // Temporarily disable enforceErrno;
+      const int clock_gettime_errno = errno;
+      auto t4 = MyMonoTime.currTime();
+    }
 
     if (stat_read_ret == -1 && stat_read_errno0 == ESRCH) {
       done_ = true;
     }
+    version (proc_schedstat_method) {
     if (schedstat_read_ret == -1 && schedstat_read_errno0 == ESRCH) {
       done_ = true;
     }
-    if (clock_gettime_ret == -1) {
-      done_ = true;
     }
-    if (stat_read_ret < 0 || schedstat_read_ret < 0) {
+    version (posix_cpuclock_method) {
+      if (clock_gettime_ret == -1) {
+        done_ = true;
+      }
+    }
+    if (stat_read_ret < 0) {
       done_ = true;
       // Don't even set the timestamp, so the division of 0/0 will become nan.
       // import std.stdio;
       // debug writefln("Dead process");
       return PidProcStat();
+    }
+    version (proc_schedstat_method) {
+    if (schedstat_read_ret < 0) {
+      done_ = true;
+      return PidProcStat();
+    }
     }
 }
 
@@ -470,8 +524,10 @@ version (SimpleSeekPlusRead) {
     // 1235 (Web Content) S 0 1 1 0 -1 4194560 832470 238694343 103 1686500 1683 2560 474465 126333 20 0 1 0 5 171896832 3313 18446744073709551615 94719783747584 94719784579661 140736021273296 0 0 0 671173123 4096 1260 0 0 0 17 26 0 0 23 0 0 94719784966352 94719785267440 94719797018624 140736021278282 140736021278330 140736021278330 140736021278691 0
     // 1               2  3 4 5 6 7 ...
 
+    version (proc_schedstat_method) {
     const string schedstat_data = cast(const(string))(buf2[0 .. schedstat_read_ret]);
     // 419105520363 207180531 18635
+    }
 
 
     import std.algorithm.searching : findSplit;
@@ -511,8 +567,16 @@ enum bool autodecodeStrings;
 
     PidProcStat r = void;
 
-    // r.timestamp = time_avg(t1, t2);
-    r.timestamp = time_avg(t2, t3);
+    // Note. t1 and t2 always are available, even if the CPU measurment method is not proc_stat_method.
+    version (proc_stat_method) {
+      r.timestamp = time_avg(t1, t2);
+    } else version (posix_cpuclock_method) {
+      r.timestamp = time_avg(t2, t4);  // When posix_cpuclock_method is on, there is no t3 from proc_schedstat_method method.
+    } else version (proc_schedstat_method) {
+      r.timestamp = time_avg(t2, t3);
+    } else {
+      static assert(0, "No selected CPU measurement method");
+    }
 
     // r.pid = splitted0[0].to!int;
     // r.pid = split0[0].findSplit(" ")[0].to!int;
@@ -560,22 +624,29 @@ enum bool autodecodeStrings;
     r.vsize =       splitted.popy().qto!uint64;  // 23
     r.rss =         splitted.popy().qto!int64;   // 24
 
-    r.cpu_clock_time = ts;
+    version (posix_cpuclock_method) {
+      r.cpu_clock_time = ts;
+    }
 
-
+    version (proc_schedstat_method) {
     {
-    const split1 = schedstat_data.findSplit(" ");
-    const split2 = split1[2].findSplit(" ");
-    r.schedstat_running_usec = split1[0].qto!uint64;  // Both user and system.
-    r.schedstat_waiting_usec = split2[0].qto!uint64;  // Waiting in runqueue
-    // r.schedstat_timeslices_run = split2[2].qto!uint64;
+      const split1 = schedstat_data.findSplit(" ");
+      const split2 = split1[2].findSplit(" ");
+      r.schedstat_running_usec = split1[0].qto!uint64;  // Both user and system.
+      r.schedstat_waiting_usec = split2[0].qto!uint64;  // Waiting in runqueue
+      // r.schedstat_timeslices_run = split2[2].qto!uint64;
+    }
     }
 
     version(timestamp_debugging) {
        r.t1 = t1;
        r.t2 = t2;
+       version (proc_schedstat_method) {
        r.t3 = t3;
+       }
+       version (posix_cpuclock_method) {
        r.t4 = t4;
+       }
     }
 
     return r;
@@ -612,15 +683,6 @@ https://gitlab.com/procps-ng/procps/-/blob/master/top/top.c#L6213
 
   static
   void format(ref Appender!(char[]) appender, const ref PidProcStat prev, const ref PidProcStat next, bool human_friendly) {
-    import time : TickPerSecond;
-    // static
-    const ticks_per_second = TickPerSecond();
-
-    // static
-    const size_t page_size_kb = (){
-      import core.sys.posix.unistd : sysconf, _SC_PAGESIZE;
-      return cast(size_t)(sysconf(_SC_PAGESIZE)) / 1024;
-    }();
     assert(page_size_kb > 0);
     // debug assert(page_size_kb * 1024 == cast(size_t)(sysconf(_SC_PAGESIZE)));
 
@@ -630,10 +692,14 @@ version (proc_stat_method) {
     const stime_difference_nsec = (next.stime - prev.stime) * 1_000_000_000uL / ticks_per_second;
     const double cpu_time_pct = 100.0 * (utime_difference_nsec + stime_difference_nsec) / wall_clock_time_difference_nsec;
 } else version (posix_cpuclock_method) {
-    const double cpu_time_pct = 100.0 * (next.cpu_clock_time - prev.cpu_clock_time) / wall_clock_time_difference_nsec;
-} else {  // proc_schedstat_method
+    const double cpu_time_pct = 100.0 * 1000.0 * (timespec_to_usecs(next.cpu_clock_time) - timespec_to_usecs(prev.cpu_clock_time)) / wall_clock_time_difference_nsec;
+} else version (proc_schedstat_method) {
     const double cpu_time_pct = 100.0 * (next.schedstat_running_usec - prev.schedstat_running_usec) / wall_clock_time_difference_nsec;
+} else {
+    static assert(0, "No available CPU measurment methods");
 }
+
+    const double cpu_time_pct_bypass = (next.pid != 0) ? (cpu_time_pct >= 0.0 ? cpu_time_pct : double.nan) : double.nan;
 
     import std.format : formattedWrite;  //, sformat;
     version(timestamp_debugging) {
@@ -651,37 +717,41 @@ version (proc_stat_method) {
           next.schedstat_running_usec,
 
           wall_clock_time_difference_nsec,
-          (cpu_time_pct >= 0.0 ? cpu_time_pct : double.nan),
+          cpu_time_pct_bypass,
           next.rss * page_size_kb / 1024);
     } else {
-      const double cpu_time_pct_bypass = (next.pid != 0) ? cpu_time_pct : double.nan;
       if (human_friendly) {
         // We do display %% and MiB here, because when one has many columns,
         // having them there makes it easier to know what is what,
         // without needing to reference header somewhere behind.
         appender.formattedWrite!"%8.2f%% %7dMiB"(
-            (cpu_time_pct_bypass >= 0.0 ? cpu_time_pct_bypass : double.nan),
+            cpu_time_pct_bypass,
             next.rss * page_size_kb / 1024);
       } else {
         // For non-human consumption, we use more narrow columns by default,
         // they will expand if needed, at the expense of uglier look
         // (jagged and not aligned). But that is fine.
-        appender.formattedWrite!"%7.2f %6d"(
-            (cpu_time_pct_bypass >= 0.0 ? cpu_time_pct_bypass : double.nan),
-            next.rss * page_size_kb / 1024);
+        // We also use more precision, close to 1KiB instead of 1MiB only.
+        appender.formattedWrite!"%6.2f %10.3f"(
+            cpu_time_pct_bypass,
+            next.rss * page_size_kb / 1024.0);
       }
     }
   }
 
  private:
   const int stat_fd_;
+version (proc_schedstat_method) {
   const int schedstat_fd_;
+}
   const int pid_;
   Pid pid2_;
   const string name_;  // This will be limited to 16 characters by kernel.
   bool done_;
 
+version (posix_cpuclock_method) {
   /*const*/ clockid_t clockid_;
+}
 }
 
 // Return pids of processes matching given name.
@@ -689,7 +759,7 @@ version (proc_stat_method) {
 // TODO(baryluk): It would be great to maybe return pidfd?
 int[] find_process_by_name(string name, string username = null) {
   int[] ret;
-  import std.file : dirEntries, SpanMode;
+  import std.file : dirEntries, SpanMode, FileException;
   import std.conv : to, ConvException;
   import util : readfile_string;
   foreach (string filename; dirEntries("/proc", SpanMode.shallow)) {
@@ -701,7 +771,13 @@ int[] find_process_by_name(string name, string username = null) {
       if (comm == name) {
         ret ~= pid;
       }
-    } catch (ConvException ce) {}
+    } catch (FileException ce) {
+      // The file we tried to open (using readfile_string) is gone.
+      // Just ignore it.
+    } catch (ConvException ce) {
+      // We tried to convert non-task directory (like "acpi", "bus", "sys") to integer pid.
+      // Just ignore it.
+    }
   }
   return ret;
 }

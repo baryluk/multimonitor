@@ -11,6 +11,7 @@ import time;
 import hwmon;
 import gpu : GpuStuff, GpuStatReader, GpuStat;
 import io : IoStuff, VmStatReader, VmStat;
+import net : NetStuff, NetStatReader, NetStat;
 import cpu;
 import proc;
 import exec;
@@ -54,13 +55,13 @@ int main(string[] args) {
 
   bool cpu;
   bool load;
-  bool temp;
+  bool cpu_temp;
   bool sched;
   bool vm;
   bool interrupts;
   bool ctx;
-  IoStuff io;
-  bool net;
+  IoStuff io_stuff;
+  NetStuff net_stuff;
   string[] mangohud_fps;
 
   GpuStuff gpu_stuff;
@@ -102,14 +103,14 @@ int main(string[] args) {
     "process_map",        "Assign short names to processes, i.e. a=firefox,b=123", &process_map,
     "cpu",                "Overall CPU stats, i.e. load, average and max frequency", &cpu,
     "load",               "System-wide load average", &load,
-    "temp",               "CPU temperature", &temp,
+    "cpu_temp",           "CPU temperature", &cpu_temp,
     "sched",              "System-wide CPU scheduler details", &sched,
     "vm",                 "System-wide virtual memory subsystem details", &vm,
     "interrupts",         "System-wide interrupts details", &interrupts,
     "ctx",                "System-wide context switching metrics", &ctx,
-    "io",                 "System-wide IO details. Available: none, min, max", &io,
-    "net",                "System-wide networking metrics", &net,
-    "gpu",                "System-wide GPU stats. Available: none, min, max", &gpu_stuff,
+    "io",                 "System-wide block/VM IO details. Available: none, min, max", &io_stuff,
+    "net",                "System-wide networking metrics (excluding 'lo'). Available: none, min, med, max", &net_stuff,
+    "gpu",                "System-wide GPU stats. Available: none, min, med, max", &gpu_stuff,
     "mangohud_fps",       "Gather FPS information for given processes using MangoHud RPC", &mangohud_fps,
     // TODO(baryluk): It would be nice to preserve relative order when varoius options are mixed.
     "exec",               "Run external command with arbitrary output once per sample", &exec,
@@ -155,10 +156,12 @@ int main(string[] args) {
   const async_delay = dur!"msecs"(async_delay_msec);
 
   auto amdgpu_hwmon_dir = gpu_stuff != GpuStuff.none ? searchHWMON("amdgpu") : null;
-  auto gpu_stat_reader = amdgpu_hwmon_dir !is null ? async_wrap(new GpuStatReader(amdgpu_hwmon_dir), async_delay) : null;
+  auto gpu_stat_reader = amdgpu_hwmon_dir !is null ? async_wrap(new GpuStatReader(amdgpu_hwmon_dir, gpu_stuff), async_delay) : null;
 
   // For basic I/O stats.
-  auto vmstat_reader = io != IoStuff.none ? new VmStatReader(io) : null;
+  auto vmstat_reader = io_stuff != IoStuff.none ? new VmStatReader(io_stuff) : null;
+
+  auto netstat_reader = net_stuff != NetStuff.none ? new NetStatReader(net_stuff) : null;
 
   foreach (process_name; process_names) {
     bool found = false;
@@ -299,6 +302,7 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
 
   GpuStat gpu_prev, gpu_next;
   VmStat vmstat_prev, vmstat_next;
+  NetStat netstat_prev, netstat_next;
 
   import std.array : Appender, appender;
   // Appender!string w;
@@ -438,6 +442,8 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
 
     const string[] vmstat_headers = vmstat_reader ? vmstat_reader.header(human_friendly) : [];
 
+    const string[] netstat_headers = netstat_reader ? netstat_reader.header(human_friendly) : [];
+
     void process_header_data(const string[] headers) {
       foreach (i, s; headers) {
         auto ss = s.findSplit("|");
@@ -459,6 +465,7 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
     }
     process_header_data(gpu_headers);
     process_header_data(vmstat_headers);
+    process_header_data(netstat_headers);
     foreach (i, ref pid_reader; pid_readers) {
       process_header_data(pid_reader.header(human_friendly));
     }
@@ -477,10 +484,19 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
 
   header();
 
-
-  foreach (scrape_time, scrape_realtime, absolute_time, relative_time, good; time_loop(interval, verbose)) {
+mainloop:
+  foreach (scrape_time, scrape_realtime, absolute_time, relative_time, good; time_loop(interval, duration, verbose)) {
     foreach (i, pid_reader; pid_readers) {
       next[i] = pid_reader.read();
+    }
+
+    if (exit_when_dead) {
+      foreach (i, pid_reader; pid_readers) {
+        // Zombie or dead
+        if (next[i].state == 'Z' || next[i].state == 'X' || next[i].state == 'x') {
+          break mainloop;
+        }
+      }
     }
 
     foreach (i, exec_reader; exec_readers) {
@@ -500,6 +516,10 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
 
     if (vmstat_reader) {
       vmstat_next = vmstat_reader.read();
+    }
+
+    if (netstat_reader) {
+      netstat_next = netstat_reader.read();
     }
 
     if (good) {  // If there was a large jump in expected time (i.e. we got some signal, system was susspended, or we got SIGSTOP, or tracing), don't compute differences.
@@ -529,6 +549,11 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
       if (vmstat_reader) {
         w.put(' ');
         vmstat_reader.format(w, vmstat_prev, vmstat_next, human_friendly);
+      }
+
+      if (netstat_reader) {
+        w.put(' ');
+        netstat_reader.format(w, netstat_prev, netstat_next, human_friendly);
       }
 
       foreach (i, pid_reader; pid_readers) {
@@ -562,6 +587,7 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
 
     gpu_prev = gpu_next;
     vmstat_prev = vmstat_next;
+    netstat_prev = netstat_next;
     foreach (i, pid; pids) {
       prev[i] = next[i];
     }
@@ -575,9 +601,16 @@ user@debian:~/vps1/home/baryluk/multimonitor$ ./a.out $(pidof stress-ng-cpu) 1 2
       pipe_prev[i] = pipe_next[i];
     }
 
-    if (duration != duration.max && relative_time >= duration) {
-      break;
+/+
+    if (exit_when_dead) {
+      foreach (ref pid; pids_to_wait) {
+        auto waited = tryWait(pid);
+        if (waited.terminated) {
+          break mainloop;
+        }
+      }
     }
++/
   }
 
   if (gpu_stat_reader) {

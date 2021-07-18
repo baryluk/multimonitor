@@ -43,7 +43,12 @@ struct VmStat {
   uint64 pswpin, pswpout;  // In pages.
 }
 
-enum IoStuff {none, min, max, }
+enum IoStuff {
+  none,
+  min,
+  med,
+  max,
+}
 
 class VmStatReader {
  public:
@@ -203,16 +208,18 @@ version (SimpleSeekPlusRead) {
     // static
     //const ticks_per_second = TickPerSecond();
 
-    const wall_clock_time_difference_nsec = (next.timestamp - prev.timestamp).total!"nsecs";
+    const wall_clock_time_difference_sec = (next.timestamp - prev.timestamp).total!"nsecs" * 1.0e-9;
 
-    const double pgpgin_rate_kBps = 1.0 * (next.pgpgin - prev.pgpgin) / (wall_clock_time_difference_nsec * 1.0e-9);
-    const double pgpgout_rate_kBps = 1.0 * (next.pgpgout - prev.pgpgout) / (wall_clock_time_difference_nsec * 1.0e-9);
+    const double pgpgin_rate_kBps = (next.pgpgin - prev.pgpgin) / wall_clock_time_difference_sec;
+    const double pgpgout_rate_kBps = (next.pgpgout - prev.pgpgout) / wall_clock_time_difference_sec;
 
     import std.format : formattedWrite;
     if (human_friendly) {
-      // We do display %% and MiB here, because when one has many columns,
+      // We do display KB/s here, because when one has many columns,
       // having them there makes it easier to know what is what,
       // without needing to reference header somewhere behind.
+      // We don't display KiB/s, while more correct, it just wastes
+      // extra character, and usually it is not big super important.
       appender.formattedWrite!"%7.0fKB/s %7.0fKB/s"(
           pgpgin_rate_kBps, pgpgout_rate_kBps);
     } else {
@@ -233,8 +240,8 @@ version (SimpleSeekPlusRead) {
       assert(page_size_kb > 0);
       // debug assert(page_size_kb * 1024 == cast(size_t)(sysconf(_SC_PAGESIZE)));
 
-      const double pswpin_rate_kBps = 1.0 * page_size_kb * (next.pswpin - prev.pswpin) / (wall_clock_time_difference_nsec * 1.0e-9);
-      const double pswpout_rate_kBps = 1.0 * page_size_kb * (next.pswpout - prev.pswpout) / (wall_clock_time_difference_nsec * 1.0e-9);
+      const double pswpin_rate_kBps = 1.0 * page_size_kb * (next.pswpin - prev.pswpin) / wall_clock_time_difference_sec;
+      const double pswpout_rate_kBps = 1.0 * page_size_kb * (next.pswpout - prev.pswpout) / wall_clock_time_difference_sec;
 
       appender.put(' ');
       if (human_friendly) {

@@ -40,7 +40,7 @@ auto UnixEpoch() /*pure*/ {
 public import std.datetime : SysTime;
 string toISO_UTC(const SysTime t) {
   import std.datetime : UTC;
-  debug assert(t.tz == UTC());
+  debug assert(t.timezone == UTC());
   const string iso1 = t.toISOExtString();
   import std.conv : to, toChars;
   import std.range : /*padRight,*/ padLeft;
@@ -133,7 +133,7 @@ bool mysleep(const MyMonoTime when) {
 ++/
 }
 
-auto time_loop(Duration interval, bool verbose = false) {
+auto time_loop(const Duration interval, const Duration duration, bool verbose = false) {
   struct TimeLooper {
     int opApply(int delegate(const(MyMonoTime) timestamp_, const(SysTime) scrape_realtime_, const(Duration), const(Duration), bool good_) loop_body) {
       long j = 0;
@@ -148,7 +148,6 @@ auto time_loop(Duration interval, bool verbose = false) {
 
       import std.stdio : writeln;
       debug import std.stdio : writef, writefln;
-
 
       while (true) {
         MyMonoTime scrape_time = MyMonoTime.currTime();  // Arbitrary, but accurate time.
@@ -204,6 +203,10 @@ auto time_loop(Duration interval, bool verbose = false) {
         // writefln("%s usec processing time", end_time - scrape_time);
         //Thread.sleep(interval - (end_time - scrape_time) - correction_offset);  // This is wrong. This is using CLOCK_REALTIME by default.
         // TODO: Compensate for the long term drift.
+
+        if (duration != duration.max && relative_time >= duration) {
+          break;
+        }
 
         const MyMonoTime next_scrape_time_target = start_time + j * interval - correction_offset;
         if (!mysleep(next_scrape_time_target)) {

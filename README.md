@@ -556,6 +556,227 @@ $ sudo multimonitor --pipe "exec tail -f /var/log/syslog" \
 This is not a super useful feature at the moment, because by default text on each
 column is right aligned, making it somehow silly to use.
 
+### Example of `--pipe` to monitor extra metrics for the process
+
+Here we monitor GPU, process CPU and RSS, but additionally we monitor
+number of memory mappings and VmSize (in KiB) using external script, run
+continously. The `--pipe` scripts has a bit of extra boilerplate to find
+automatically the process, and preserve the format (number of columns),
+if the process is gone (so it is easier to parse later in other tools).
+
+```
+$ multimonitor \
+  --gpu=med \
+  --process cat \
+  --pipe 'while true; do P=$(pidof -s cat); if [ "$P" != "" ]; then while wc -l "/proc/$P/maps" 2>/dev/null; do sleep 0.22; done; else echo "nan" "-"; fi; done' \
+  --pipe 'while true; do P=$(pidof -s cat); if [ "$P" != "" ]; then while awk "/^VmSize/ {print \$2;}" "/proc/$P/status" 2>/dev/null; do sleep 0.22; done; else echo "nan"; fi; done'
+# ProcStat Initializing ticks_per_second = 100
+# ProcStat Initializing page_size_kb = 4
+# Arguments: ["multimonitor", "--gpu=med", "--process", "cat", "--pipe", "while true; do P=$(pidof -s cat); if [ \"$P\" != \"\" ]; then while wc -l \"/proc/$P/maps\" 2>/dev/null; do sleep 0.22; done; else echo \"nan\" \"-\"; fi; done", "--pipe", "while true; do P=$(pidof -s cat); if [ \"$P\" != \"\" ]; then while awk \"/^VmSize/ {print \\$2;}\" \"/proc/$P/status\" 2>/dev/null; do sleep 0.22; done; else echo \"nan\"; fi; done"]
+# Waiting for process cat
+# Waiting for process cat
+# Waiting for process cat
+# Waiting for process cat
+# Waiting for process cat
+# Waiting for process cat
+# Waiting for process cat
+# Waiting for process cat
+# Waiting for process cat
+# For process name cat found pids: [451314]
+# Spawned 451315 for --pipe: while true; do P=$(pidof -s cat); if [ "$P" != "" ]; then while wc -l "/proc/$P/maps" 2>/dev/null; do sleep 0.22; done; else echo "nan" "-"; fi; done
+# Spawned 451320 for --pipe: while true; do P=$(pidof -s cat); if [ "$P" != "" ]; then while awk "/^VmSize/ {print \$2;}" "/proc/$P/status" 2>/dev/null; do sleep 0.22; done; else echo "nan"; fi; done
+        UNIX-TIME            TIME      RELTIME GPU%       VRAM    SCLK  GPUT    GPUP      CPU%        RSS                 PIPE PIPE
+1620578670.951151    30070.936277     0.200060   0%   209.4MiB 1050MHz  35°C 112.13W     0.00%       0MiB  
+1620578671.151156    30071.136242     0.400025   0%   209.4MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578671.351161    30071.336259     0.600041   0%   201.9MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578671.551167    30071.536250     0.800033   0%   201.9MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578671.751172    30071.736255     1.000037   0%   201.9MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578671.951177    30071.936253     1.200035   0%   201.9MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578672.151183    30072.136258     1.400041   0%   202.4MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578672.351188    30072.336251     1.600034   0%   202.4MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578672.551194    30072.536254     1.800036   0%   202.4MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578672.751199    30072.736253     2.000035   0%   202.4MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578672.951204    30072.936253     2.200036   0%   202.4MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578673.151210    30073.136254     2.400036   0%   202.4MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578673.351215    30073.336257     2.600040   0%   202.4MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578673.551220    30073.536251     2.800034   0%   202.4MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578673.751226    30073.736254     3.000036   0%   202.4MiB 1050MHz  35°C 112.13W     0.00%       0MiB 24 /proc/451314/maps 5440
+1620578673.951231    30073.936253     3.200036   0%   202.4MiB 1050MHz  35°C 112.13W      nan%       0MiB 24 /proc/451314/maps 5440
+1620578674.151236    30074.136263     3.400046   0%   202.4MiB 1050MHz  35°C 112.13W      nan%       0MiB                nan -  nan
+1620578674.351242    30074.336259     3.600042   0%   202.4MiB 1050MHz  35°C 112.15W      nan%       0MiB                nan -  nan
+1620578674.551247    30074.536256     3.800039   0%   202.4MiB 1050MHz  35°C 112.15W      nan%       0MiB                nan -  nan
+1620578674.751252    30074.736259     4.000041   0%   202.4MiB 1050MHz  35°C 112.15W      nan%       0MiB                nan -  nan
+1620578674.951258    30074.936257     4.200040   0%   203.7MiB 1050MHz  35°C 112.13W      nan%       0MiB                nan -  nan
+1620578675.151263    30075.136259     4.400041   0%   203.7MiB 1050MHz  35°C 112.13W      nan%       0MiB                nan -  nan
+1620578675.351269    30075.336263     4.600045   0%   203.7MiB 1050MHz  35°C 112.13W      nan%       0MiB                nan -  nan
+```
+
+Note, how we use single quotes to pass `--pipe` script - this allows
+easier use of `$` inside the script.
+
+Often, it might be easier to put such `--pipe` scripts into own script
+files, for easier reuse.
+
+Also note that we use slightly bigger sleep (220ms), compared to the
+interval of multimonitor (200ms), so we are not flooded by output of
+`--pipe` script, which by the time is display is stale / old (by many
+lines). Instead, we allow the reader to block asynchronously, and display
+previous value for one cycle, but updated value will come just on the
+next cycle / line, not 10 or 100 lines later, depending on pipe/fifo
+buffering. (PS. Note that in some locales `sleep 0.22` will not work,
+use a comma, like `sleep 0,22`, or switch to more sane locale).
+
+Alternatively a simple approach is to use `--exec_async`, which is easier
+to use, but has a bit extra overhead, and might be delayed a bit extra
+due to internal caching of commands executed using `--exec_async`:
+
+```
+$ multimonitor \
+  --gpu=med \
+  --process cat \
+  --exec_async 'wc -l "/proc/$(pidof -s cat)/maps" 2>/dev/null || echo nan -' \
+  --exec_async 'awk "/^VmSize/ {print \$2;}" "/proc/$(pidof -s cat)/status" || echo nan'
+```
+
+Of course, if you know the pid before hand and the target process is
+already running, you can compute it and pass once before launching the
+`multimonitor`, to make script even simpler and slightly faster too.
+
+```
+$ P=$(pidof -s cat)
+$ multimonitor \
+  --gpu=med \
+  --pid $P \
+  --exec_async "wc -l '/proc/$P/maps' 2>/dev/null || echo nan -" \
+  --exec_async "awk '/^VmSize/ {print \$2;}' '/proc/$P/status' || echo nan"
+```
+
+Notice the inversion of single quotes and double quotes, to make it work
+correctly.
+
+### `--exit_when_dead` with `--sub`, `--pids` or `--process`
+
+When `--exit_when_dead=true` is used, then `multimonitor` will finish
+(and terminate other processes) as soon as any of the monitored processes
+is in zombie, dead state or gone. Even if that is before the end of
+`--duration_sec` settings.
+
+```
+$ multimonitor --exit_when_dead --sub="exec sleep 2" --duration_sec=3600
+# Spawned 2708230 for --sub: exec sleep 2
+        UNIX-TIME            TIME      RELTIME      CPU%        RSS
+1614694484.970314   768700.437572     0.200172     0.00%       0MiB
+1614694485.170316   768700.637394     0.399994     0.00%       0MiB
+1614694485.370317   768700.837564     0.600165     0.00%       0MiB
+1614694485.570318   768701.037498     0.800098     0.00%       0MiB
+1614694485.770320   768701.237419     1.000019     0.00%       0MiB
+1614694485.970321   768701.437574     1.200174     0.00%       0MiB
+1614694486.170322   768701.637485     1.400085     0.00%       0MiB
+1614694486.370324   768701.837537     1.600137     0.00%       0MiB
+1614694486.570325   768702.037491     1.800092     0.00%       0MiB
+1614694486.770326   768702.237535     2.000135     0.00%       0MiB
+$
+```
+
+```
+$ multimonitor_ldc --exit_when_dead --sub="exec sleep 2" --sub="exec sleep 100" --duration_sec=3600
+# Spawned 2727867 for --sub: exec sleep 2
+# Spawned 2727868 for --sub: exec sleep 100
+        UNIX-TIME            TIME      RELTIME      CPU%        RSS      CPU%        RSS
+1614694874.680933   769090.149657     0.200049     0.00%       0MiB     0.00%       0MiB
+1614694874.880935   769090.349626     0.400018     0.00%       0MiB     0.00%       0MiB
+1614694875.080936   769090.549686     0.600078     0.00%       0MiB     0.00%       0MiB
+1614694875.280938   769090.749626     0.800018     0.00%       0MiB     0.00%       0MiB
+1614694875.480940   769090.949682     1.000074     0.00%       0MiB     0.00%       0MiB
+1614694875.680942   769091.149658     1.200050     0.00%       0MiB     0.00%       0MiB
+1614694875.880943   769091.349651     1.400043     0.00%       0MiB     0.00%       0MiB
+1614694876.080945   769091.549656     1.600048     0.00%       0MiB     0.00%       0MiB
+1614694876.280947   769091.749663     1.800055     0.00%       0MiB     0.00%       0MiB
+1614694876.480949   769091.949641     2.000033     0.00%       0MiB     0.00%       0MiB
+# Sending SIGTERM to not yet terminated pid 2727868
+```
+
+Without this argument, the multimonitor will keep reporting (including
+possibly other metrics) until duration is finished, even if any or all
+processes are done:
+
+```
+$ ./multimonitor_ldc --exit_when_dead=false --sub="exec sleep 2" --duration_sec=3600
+# Spawned 2708485 for --sub: exec sleep 2
+        UNIX-TIME            TIME      RELTIME      CPU%        RSS
+1614694563.114823   768778.583917     0.200051     0.00%       0MiB
+1614694563.314824   768778.783901     0.400035     0.00%       0MiB
+1614694563.514825   768778.983913     0.600046     0.00%       0MiB
+1614694563.714827   768779.183920     0.800053     0.00%       0MiB
+1614694563.914828   768779.383904     1.000038     0.00%       0MiB
+1614694564.114829   768779.583923     1.200057     0.00%       0MiB
+1614694564.314831   768779.783897     1.400031     0.00%       0MiB
+1614694564.514832   768779.983923     1.600056     0.00%       0MiB
+1614694564.718833   768780.184043     1.800176     0.00%       0MiB
+1614694564.914835   768780.383834     1.999968     0.00%       0MiB
+1614694565.114836   768780.583934     2.200068     0.00%       0MiB
+1614694565.314837   768780.783898     2.400032     0.00%       0MiB
+1614694565.514838   768780.983894     2.600028     0.00%       0MiB
+1614694565.714840   768781.183896     2.800029     0.00%       0MiB
+1614694565.914841   768781.383904     3.000037     0.00%       0MiB
+1614694566.114842   768781.583919     3.200052     0.00%       0MiB
+1614694566.314844   768781.783887     3.400021     0.00%       0MiB
+1614694566.514845   768781.983901     3.600034     0.00%       0MiB
+1614694566.714846   768782.183894     3.800028     0.00%       0MiB
+1614694566.914848   768782.383899     4.000033     0.00%       0MiB
+1614694567.114849   768782.583880     4.200013     0.00%       0MiB
+1614694567.314850   768782.783921     4.400055     0.00%       0MiB
+...
+...
+...
+```
+
+During that period, dead processes might have their `CPU%` figure
+reported as `NaN%` or `nan%` or `0.00%`. For external processes also the
+`RSS` might be reported as `NaNMiB` or `nanMiB` or `0MiB`, after they are
+gone, for example:
+
+```
+$ ( sleep 3 & );  # Process we will be monitoring.
+$ sleep 1;        # Give it some time to start.
+$ multimonitor --exit_when_dead=false --process="sleep" --duration_sec=4
+# For process name sleep found pids: [2717459]
+        UNIX-TIME            TIME      RELTIME      CPU%        RSS
+1614694744.711994   768960.183894     0.200052     0.00%       0MiB
+1614694744.911996   768960.383852     0.400010     0.00%       0MiB
+1614694745.111997   768960.583890     0.600047     0.00%       0MiB
+1614694745.311998   768960.783867     0.800024     0.00%       0MiB
+1614694745.512000   768960.983882     1.000039     0.00%       0MiB
+1614694745.712001   768961.183871     1.200029     0.00%       0MiB
+1614694745.912002   768961.383893     1.400050     0.00%       0MiB
+1614694746.112003   768961.583865     1.600023     0.00%       0MiB
+1614694746.312005   768961.783884     1.800041      nan%       0MiB
+1614694746.512006   768961.983868     2.000026      nan%       0MiB
+1614694746.712007   768962.183880     2.200038      nan%       0MiB
+1614694746.912009   768962.383890     2.400047      nan%       0MiB
+1614694747.112010   768962.583872     2.600029      nan%       0MiB
+1614694747.312011   768962.783895     2.800052      nan%       0MiB
+1614694747.512012   768962.983883     3.000040      nan%       0MiB
+1614694747.712014   768963.183895     3.200053      nan%       0MiB
+1614694747.912015   768963.383888     3.400046      nan%       0MiB
+1614694748.112016   768963.583888     3.600046      nan%       0MiB
+1614694748.312018   768963.783887     3.800045      nan%       0MiB
+1614694748.512019   768963.983889     4.000047      nan%       0MiB
+$
+```
+
+TODO(baryluk): Implement `--exit_when_dead=any` and `--exit_when_dead=all`.
+
+TODO(baryluk): Implement `--exit_when_dead=anysub` and
+`--exit_when_dead=allsub`, which would only take into account the `--sub`
+processes in the early termination logic, not the other ones.
+
+TODO(baryluk): If all (at least one) monitored processes are of `--sub`
+type, automatically use `--exit_when_dead=allsub`.
+
+
+TODO(baryluk): Implement / fix this for `--pipe` too?
+
 ### `--buffered`
 
 By default `multimonitor` flushes unconditionally output after each line. This

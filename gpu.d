@@ -26,11 +26,12 @@ struct GpuStat {
 enum GpuStuff {
   none,
   min,
+  med,
   max,
 }
 
 class GpuStatReader {
-  this(string hwmon_dir) {
+  this(string hwmon_dir, const GpuStuff mode) {
     import core.sys.posix.fcntl : open, O_RDONLY;
     import std.conv : to;
     import std.string : toStringz;
@@ -49,6 +50,8 @@ class GpuStatReader {
       import std.string : stripRight;
       assert((cast(string)(read(hwmon_dir ~ "/in0_label"))).stripRight() == "vddgfx");
     }
+
+    mode_ = mode;
   }
   ~this() {
     import core.sys.posix.unistd : close;
@@ -83,28 +86,49 @@ class GpuStatReader {
     return r;
   }
 
-  static
+  // static
   string[] header(bool human_friendly) {
+    string[] ret;
     if (human_friendly) {
-      return ["%7s|GPU%|GPU load percentage",
+      ret ~= ["%4s|GPU%|GPU load percentage",
               "%10s|VRAM|GPU memory usage in MiB",
-              "%9s|SCLK|GPU core clock frequency in MHz"];
+              "%7s|SCLK|GPU core clock frequency in MHz"];
     } else {
-      return ["%6s|GPU%|GPU load percentage",
+      ret ~= ["%6s|GPU%|GPU load percentage",
               "%7s|VRAM|GPU memory usage in MiB",
               "%6s|SCLK|GPU core clock frequency in MHz"];
     }
+    if (mode_ >= GpuStuff.med) {
+      ret ~= ["%5s|GPUT|GPU temperature in °C",
+              "%7s|GPUP|GPU power in W"];
+    }
+    if (mode_ >= GpuStuff.max) {
+      ret ~= ["%5s|GPUVdd|GPU VDD in V"];
+    }
+    return ret;
   }
 
   import std.array : Appender;
 
-  static
+  // static
   void format(ref Appender!(char[]) appender, const ref GpuStat prev, const ref GpuStat next, bool human_friendly = true) {
     import std.format : formattedWrite;
     if (human_friendly) {
-      appender.formattedWrite!(" %5.1f%% %7.1fMiB %6.1fMHz")(next.gpu_pct, next.vram_kb / 1024.0, next.freq1_Hz / 1.0e6);
+      appender.formattedWrite!("%3.0f%% %7.1fMiB %4.0fMHz")(next.gpu_pct, next.vram_kb / 1024.0, next.freq1_Hz * 1.0e-6);
+      if (mode_ >= GpuStuff.med) {
+        appender.formattedWrite!" %3.0f°C %6.2fW"(next.temp1_mC * 1.0e-3, next.power1_uW * 1.0e-6);
+      }
+      if (mode_ >= GpuStuff.max) {
+        appender.formattedWrite!" %5.3fV"(next.VDD_mV * 1.0e-3);
+      }
     } else {
-      appender.formattedWrite!(" %5.1f %7.1f %6.1f")(next.gpu_pct, next.vram_kb / 1024.0, next.freq1_Hz / 1.0e6);
+      appender.formattedWrite!("%5.1f %8.2f %6.1f")(next.gpu_pct, next.vram_kb / 1024.0, next.freq1_Hz * 1.0e-6);
+      if (mode_ >= GpuStuff.med) {
+        appender.formattedWrite!" %6.2f %10.6f"(next.temp1_mC * 1.0e-3, next.power1_uW * 1.0e-6);
+      }
+      if (mode_ >= GpuStuff.max) {
+        appender.formattedWrite!" %6.4f"(next.VDD_mV * 1.0e-3);
+      }
     }
   }
 
@@ -119,12 +143,7 @@ class GpuStatReader {
   int temp1_fd_;
   int vdd_fd_;
 
-
   const ulong vram_total_bytes;
-}
 
-// grep . /sys/class/drm/card0/device/hwmon/hwmon2/{power1_average,freq1_input,freq2_input,temp1_input}
-// /sys/class/drm/card0/device/hwmon/hwmon2/power1_average:27178000
-// /sys/class/drm/card0/device/hwmon/hwmon2/freq1_input:845460000
-// /sys/class/drm/card0/device/hwmon/hwmon2/freq2_input:500000000
-// /sys/class/drm/card0/device/hwmon/hwmon2/temp1_input:29000
+  const GpuStuff mode_;
+}
