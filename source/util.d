@@ -47,8 +47,8 @@ template qto(T) {
     T neg = 1;
     if (c == '-') {
        neg = -1;
-       i++;
        c = s[i];
+       i++;
     }
     c -= '0';
     assert(0 <= c && c <= 9);
@@ -94,8 +94,8 @@ template qtof(T) {
     T neg = cast(T)(1.0f);
     if (c == '-') {
        neg = cast(T)(-1.0f);
-       i++;
        c = s[i];
+       i++;
     }
     c -= '0';
     assert(0 <= c && c <= 9);
@@ -131,17 +131,24 @@ unittest {
   assert("-1".qtof!float == -1);
   assert("-0".qtof!float == 0);
 
-  assert("6.54".qtof!float == 6.54);
-  assert("6.54".qtof!double == 6.54);
-  assert("006.54".qtof!float == 6.54);
-  assert("006.54".qtof!double == 6.54);
-  assert("6.5400".qtof!float == 6.54);
-  assert("6.5400".qtof!double == 6.54);
-  assert("6.0054".qtof!float == 6.0054);
-  assert("6.0054".qtof!double == 6.0054);
+  assert("1.00".qtof!float == 1.0f);
+  assert("0.00".qtof!float == 0.0f);
+  assert("-1.00".qtof!float == -1.0f);
+  assert("-0.00".qtof!float == 0.0f);
 
-  assert("-6.54".qtof!float == -6.54);
-  assert("-6.54".qtof!double == -6.54);
+  import std.math : isClose;
+
+  assert(isClose("6.54".qtof!float, 6.54f, 1.0e-5));
+  assert(isClose("6.54".qtof!double, 6.54, 1.0e-10));
+  assert(isClose("006.54".qtof!float, 6.54f, 1.0e-5));
+  assert(isClose("006.54".qtof!double, 6.54, 1.0e-10));
+  assert(isClose("6.5400".qtof!float, 6.54f, 1.0e-5));
+  assert(isClose("6.5400".qtof!double, 6.54, 1.0e-10));
+  assert(isClose("6.0054".qtof!float, 6.0054f, 1.0e-5));
+  assert(isClose("6.0054".qtof!double, 6.0054, 1.0e-10));
+
+  assert(isClose("-6.54".qtof!float, -6.54f, 1.0e-5));
+  assert(isClose("-6.54".qtof!double, -6.54, 1.0e-10));
 }
 
 auto popy(R)(ref R r) {

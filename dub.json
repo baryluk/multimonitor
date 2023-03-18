@@ -1,0 +1,29 @@
+{
+	"authors": [
+		"Witold Baryluk"
+	],
+	"copyright": "Copyright © 2020-2023, Witold Baryluk",
+	"description": "A convinient command line utility to log system and process metrics.",
+	"license": "MIT",
+	"name": "multimonitor",
+
+	"toolchainRequirements": {
+		"dmd": ">=2.097.0",
+		"gdc": ">=11.0.0",
+		"ldc": ">=1.24.0"
+	},
+
+	"targetType": "executable",
+
+	"sourcePaths": [
+		"source"
+	],
+
+	"buildTypes": {
+		"release": {
+			"buildOptions": ["releaseMode", "optimize", "inline"],
+			"dflags-gdc": ["-march=native"],
+			"dflags-ldc": ["-mcpu=native"]
+		}
+	}
+}

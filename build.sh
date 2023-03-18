@@ -13,7 +13,7 @@ if which ldc2 >/dev/null; then
   else
     OPTS="-release -O2"
   fi
-  time ldc2 ${OPTS} -of=multimonitor_ldc *.d
+  time ldc2 ${OPTS} -of=multimonitor_ldc source/*.d
 fi
 if which dmd >/dev/null; then
   OPTS=""
@@ -22,7 +22,7 @@ if which dmd >/dev/null; then
   else
     OPTS="-release -O -inline"
   fi
-  time dmd ${OPTS}  -w -de -of=multimonitor_dmd *.d
+  time dmd ${OPTS}  -w -de -of=multimonitor_dmd source/*.d
 fi
 if which gdc >/dev/null; then
   OPTS=""
@@ -31,7 +31,7 @@ if which gdc >/dev/null; then
   else
     OPTS="-O2 -frelease -Wno-uninitialized"
   fi
-  time gdc ${OPTS} -W -Wno-uninitialized -o multimonitor_gdc *.d || true
+  time gdc ${OPTS} -W -Wno-uninitialized -o multimonitor_gdc source/*.d || true
 fi
 
 # Note, currently one of the stages of building (dpkg-deb -x / tar), fails when using sshfs.
@@ -43,7 +43,7 @@ cp -v /usr/share/icons/desktop-base/scalable/emblems/emblem-debian.svg AppDir/us
 appimage-builder --skip-test
 for F in multimonitor-20*-x86_64.AppImage; do
   sha256sum "$F"
-  if [ -d "${HOME}/vps1/home/baryluk/public_html/multimonitor" ]; then
-    cp --target-directory="${HOME}/vps1/home/baryluk/public_html/multimonitor" "$F"
+  if [ -d "${HOME}/vps4/home/baryluk/public_html/multimonitor" ]; then
+    cp --target-directory="${HOME}/vps4/home/baryluk/public_html/multimonitor" "$F"
   fi
 fi
