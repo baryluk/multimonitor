@@ -39,6 +39,18 @@ $ multimonitor --utc_nice --gpu=min --process valley_x64 --process Xorg
 ![](example_plot_valley.png)
 
 
+## Installation
+
+To build `multimonitor` from source, you will need a D programming language
+compiler. GDC, LDC2 and DMD are all supported. On most Linux distributions it is
+easiest to install gdc, which is part of gcc, and prepackaged on most
+distributions.
+
+After obtaining source code, just execute `./build.sh` (you can adjust options in
+that script), or use `dub` to build it.
+
+You should then get a `multimonitor` binary to use.
+
 ## Options
 
 ```
